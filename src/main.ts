@@ -11,18 +11,18 @@
 
 import Phaser from 'phaser';
 import { CompanySimulation } from './simulation/CompanySimulation.ts';
-import { PHISHING_SCENARIO } from './simulation/phishingIncident.data.ts';
+import { MONDAY_MORNING_SCENARIO } from './simulation/mondayMorning.data.ts';
 import { PHISHING_INTERACTION } from './incidents/phishing/phishingInteraction.data.ts';
 import { buildPhishingOutcome } from './incidents/phishing/phishingAftermath.ts';
 import type { PhishingOutcome } from './incidents/phishing/phishingAftermath.ts';
 import type { ResponseAssessment } from './incidents/responseEvaluator.ts';
 import { evaluateResponsePlan } from './incidents/responseEvaluator.ts';
 import type { ResponsePlan } from './incidents/interactionModel.ts';
+import { buildPhishingReactions } from './ui/phishingComms.ts';
 import type { DepartmentKey } from './game/OfficeScene.ts';
 import { OfficeScene } from './game/OfficeScene.ts';
 import { UIManager } from './ui/UIManager.ts';
 import { buildCrossDeptReaction } from './ui/commsData.ts';
-import { buildPhishingReactions } from './ui/phishingComms.ts';
 import './style.css';
 
 interface CommittedResolution {
@@ -31,8 +31,8 @@ interface CommittedResolution {
   readonly choiceId: string;
 }
 
-// 1. Instantiate the authoritative headless simulation engine with the Phishing vertical slice
-let sim = new CompanySimulation(PHISHING_SCENARIO);
+// 1. Instantiate the authoritative headless simulation engine with the Monday Morning scenario
+let sim = new CompanySimulation(MONDAY_MORNING_SCENARIO);
 let lastChoiceId: string | null = null;
 let lastResolution: CommittedResolution | null = null;
 
@@ -213,12 +213,10 @@ handleDismissResolution = () => {
 
   const state = sim.getState();
 
-  // Check for fatal conditions: insolvency or catastrophic collapse (grade F)
   if (state.isInsolvent || (state.phase === 'SIMULATION_COMPLETED' && state.metrics.grade === 'F')) {
     officeScene.setActiveDepartment(null);
     officeScene.setMovementLocked(true);
     officeScene.triggerEmergencyAlert();
-
     if (state.isInsolvent) {
       ui.showGameOver(
         'ENTERPRISE BANKRUPTCY',
@@ -230,14 +228,13 @@ handleDismissResolution = () => {
       ui.showGameOver(
         'ORGANIZATIONAL COLLAPSE',
         'Company status: Out of business. Your former engineers are venting on Hacker News.',
-        'Severe developer burnout, broken compensation trust, and aggressive austerity reduced team morale to 10/100 and platform stability to 15/100, triggering an irreversible engineering walkout and platform outage.',
+        'The Monday morning crisis spiralled out of control. Talent walked, legal claims mounted, and a $40,000 contract penalty wiped the budget savings.',
         sim.getDecisionHistory()
       );
     }
     return;
   }
 
-  // Incident 1: return to the office and let the player see the changed workplace
   if (lastResolution) {
     officeScene.setMovementLocked(false);
     officeScene.applyIncidentOutcome(lastResolution.outcome.office);
@@ -250,21 +247,6 @@ handleDismissResolution = () => {
     return;
   }
 
-  // Legacy phishing path (choice resolved without a composed plan)
-  if (lastChoiceId && lastChoiceId.startsWith('CHOICE_PHISH_')) {
-    officeScene.setMovementLocked(false);
-    officeScene.setDepartmentResolved('IT', 'Threat Neutralized');
-    const pkg = buildPhishingReactions(lastChoiceId);
-    ui.showSequentialToasts(pkg.toastAlerts);
-    ui.showDebriefButton(() => {
-      officeScene.setMovementLocked(true);
-      const report = sim.generatePerformanceReport();
-      ui.showPerformanceReport(report);
-    });
-    return;
-  }
-
-  // If simulation reached final turn and survived (grades A, B, C, D)
   if (state.phase === 'SIMULATION_COMPLETED') {
     officeScene.setActiveDepartment(null);
     officeScene.setMovementLocked(true);
@@ -273,21 +255,28 @@ handleDismissResolution = () => {
     return;
   }
 
-  // Advance active department beacon to match current turn's active incident
+  // Advance to next incident — mark the resolved dept and light up the next beacon
   const nextIncident = sim.getActiveIncident();
   const nextDept = (nextIncident?.department as DepartmentKey) ?? null;
-  officeScene.setActiveDepartment(nextDept);
 
+  if (lastChoiceId) {
+    const resolvedDept = (['IT', 'HR', 'FINANCE'] as DepartmentKey[]).find(
+      (d) => d === state.decisionLedger[state.decisionLedger.length - 1]?.department
+    );
+    if (resolvedDept) {
+      officeScene.setDepartmentResolved(resolvedDept, 'Decision Made');
+    }
+  }
+
+  officeScene.setActiveDepartment(nextDept);
   if (nextIncident) {
     ui.notifyNewIncident(nextIncident);
   }
-
   officeScene.setMovementLocked(false);
 };
 
 handleRestartSimulation = () => {
-  // Reconstruct clean simulation engine from phishing scenario conditions
-  sim = new CompanySimulation(PHISHING_SCENARIO);
+  sim = new CompanySimulation(MONDAY_MORNING_SCENARIO);
   lastChoiceId = null;
   lastResolution = null;
 
@@ -340,12 +329,28 @@ new Phaser.Game(config);
 // Populate HUD immediately with initial state
 ui.updateHUD(sim.getState());
 
-// Set initial active department beacon for Turn 1
+// Light up the first incident beacon and fire the opening toast
 const activeIncident = sim.getActiveIncident();
 officeScene.setActiveDepartment((activeIncident?.department as DepartmentKey) ?? 'IT');
 if (activeIncident) {
   ui.notifyNewIncident(activeIncident);
 }
+
+// Fire staggered toasts for all three departments so the player knows
+// every desk is on fire simultaneously
+const scenario = MONDAY_MORNING_SCENARIO;
+const deptLabels: Record<string, string> = { IT: 'IT Department', HR: 'Human Resources', FINANCE: 'Finance' };
+scenario.incidents.slice(1).forEach((inc, idx) => {
+  setTimeout(() => {
+    ui.showToastNotification(
+      `URGENT · ${deptLabels[inc.department] ?? inc.department}`,
+      inc.department === 'HR' ? 'Elena Rostova' : 'David Vance',
+      inc.department === 'HR' ? 'Head of Human Resources' : 'Interim CFO',
+      inc.title,
+      () => { /* player navigates manually */ }
+    );
+  }, (idx + 1) * 1200);
+});
 
 // Subscribe to simulation events for debugging and logging
 sim.subscribe((event) => {
