@@ -368,6 +368,23 @@ export interface EvaluatedChoice {
   readonly learningFeedback: LearningFeedback;
 }
 
+/**
+ * Optional companion submitted with a decision that was assembled from several
+ * controls (an incident response plan) rather than picked from a single option.
+ *
+ * The engine still owns all accounting: the override supplies the composed
+ * impact, and the label/rationale let the audit trail record what the executive
+ * actually ordered instead of the archetype it was built from.
+ */
+export interface DecisionSubmission {
+  /** What the executive ordered, in their own terms. */
+  readonly label?: string;
+  readonly rationale?: string;
+  /** Composed impact to apply in place of the choice's stored impact. */
+  readonly impactOverride?: ChoiceImpact;
+  readonly learningFeedbackOverride?: LearningFeedback;
+}
+
 // ============================================================================
 // 6. INCIDENTS & SCENARIO BLUEPRINT
 // ============================================================================

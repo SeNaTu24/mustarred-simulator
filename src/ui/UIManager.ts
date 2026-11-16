@@ -22,6 +22,9 @@ import type {
 } from '../simulation/types.ts';
 
 import type { PerformanceReport } from '../simulation/CompanySimulation.ts';
+import type { IncidentInteractionSpec, ResponsePlan } from '../incidents/interactionModel.ts';
+import { IncidentWorkbench } from './IncidentWorkbench.ts';
+import { IncidentOutcomeView, type OutcomeViewProps } from './IncidentOutcomeView.ts';
 import { matchPlayerDirective } from './decisionMatcher.ts';
 import {
   DEPARTMENT_HEADS,
@@ -32,6 +35,8 @@ import { MobileControls } from './MobileControls.ts';
 
 export interface UIManagerCallbacks {
   readonly onSelectChoice: (choiceId: string, additionalInstructions?: string) => void;
+  /** Fired when the player commits a composed response plan from the workbench. */
+  readonly onCommitResponse?: (plan: ResponsePlan) => void;
   readonly onDismissResolution: () => void;
   readonly onRestart: () => void;
   readonly onPromptInteract: () => void;
@@ -77,6 +82,14 @@ export class UIManager {
   private answeredQuestions: Set<string> = new Set();
   private selectedStrategyId: string | null = null;
   private escapeKeyListener?: (e: KeyboardEvent) => void;
+  private workbench?: IncidentWorkbench;
+  private outcomeView?: IncidentOutcomeView;
+  /**
+   * A consultation the player stepped away from. Kept so walking back to the
+   * department resumes the same clock and the records already read, instead of
+   * handing out a fresh investigation.
+   */
+  private suspendedWorkbench?: { incidentId: string; workbench: IncidentWorkbench };
 
   public getActiveChoices(): readonly EvaluatedChoice[] {
     return this.activeChoices;
@@ -252,8 +265,8 @@ export class UIManager {
         senderRole: 'IT Security Lead',
         senderDept: 'IT',
         timestamp: '09:14 AM · Priority Alert',
-        subject: 'URGENT: Active Phishing Session Anomaly (Tom Bradley)',
-        body: 'Automated telemetry flagged an active concurrent login from Frankfurt, Germany on Tom Bradley’s Accounts Payable credentials. Session navigated to vendor payments.',
+        subject: 'Frankfurt session on Tom Bradley\'s account',
+        body: 'Someone is signed in to Tom\'s account from Frankfurt and opened vendor payments. The session is still live.',
         tone: 'critical',
         isIncident: true,
       };
@@ -265,7 +278,7 @@ export class UIManager {
         'URGENT DISPATCH · IT SECURITY',
         'Maya Lin',
         'IT Security Lead',
-        'Active Phishing Session Anomaly (Tom Bradley)',
+        'Session live on Tom\'s account',
         () => {
           this.callbacks.onPromptInteract();
         }
@@ -308,8 +321,12 @@ export class UIManager {
 
   /**
    * Appends an authentic cross-department reaction memo to the Comms Hub and shows a toast.
+   *
+   * Pass `{ silent: true }` when the memo is already on screen (for example while
+   * the incident outcome is open) so it is filed without stacking toast cards on
+   * top of the result.
    */
-  public addCrossDeptReaction(reaction: CrossDeptReaction): void {
+  public addCrossDeptReaction(reaction: CrossDeptReaction, options?: { silent?: boolean }): void {
     this.messages.unshift({
       id: `reaction-${Date.now()}`,
       channel: reaction.senderDept,
@@ -326,6 +343,10 @@ export class UIManager {
     this.unreadCommsCount++;
     this.updateHUDCommsBadge();
     this.renderCommsDrawer();
+
+    if (options?.silent) {
+      return;
+    }
 
     this.showToastNotification(
       `DEPARTMENT MEMO · ${reaction.senderDept}`,
@@ -675,379 +696,121 @@ export class UIManager {
   }
 
   /**
-   * Renders the bespoke Colleague Consultation dialogue with Maya Lin (IT Security Lead)
-   * for the Phishing Attack incident.
+   * Renders an incident that ships a declarative interaction spec through the
+   * shared workbench: situation, evidence, response measures, assignment and a
+   * free-text order. The workbench owns only presentation and plan assembly.
    */
-  private showPhishingModal(incident: Incident, choices: readonly EvaluatedChoice[]): void {
+  private showIncidentWorkbench(incident: Incident, spec: IncidentInteractionSpec): void {
     this.activeIncident = incident;
-    this.activeChoices = choices;
-    this.answeredQuestions.clear();
-    this.selectedStrategyId = choices.find((c) => !c.isLocked)?.id ?? choices[0]?.id ?? null;
+    this.mobileControls?.setEnabled(false);
+    this.attachEscapeListener();
+    this.modalContainer.innerHTML = '';
+    this.workbench?.destroy();
 
-    // Attach Escape key listener for stepping away
+    const suspended =
+      this.suspendedWorkbench && this.suspendedWorkbench.incidentId === incident.id
+        ? this.suspendedWorkbench.workbench
+        : undefined;
+    this.suspendedWorkbench = undefined;
+
+    this.workbench =
+      suspended ??
+      new IncidentWorkbench(spec, {
+        onCommit: (plan) => this.callbacks.onCommitResponse?.(plan),
+        onStepAway: () => {
+          this.stepAwayFromIncident();
+          this.callbacks.onStepAway?.();
+        },
+      });
+
+    this.workbench.mount(this.modalContainer);
+    this.modalContainer.classList.remove('hidden');
+  }
+
+  /**
+   * Closes the consultation without losing progress, so coming back resumes the
+   * incident clock where the player left it.
+   */
+  /**
+   * Drops focus from a panel field before the panel is removed. Without this the
+   * game never sees a focusout and the player cannot move afterwards.
+   */
+  private releaseTextFocus(): void {
+    const active = document.activeElement as HTMLElement | null;
+    if (!active) {
+      return;
+    }
+    const tag = active.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      active.blur();
+    }
+  }
+
+  private stepAwayFromIncident(): void {
+    this.releaseTextFocus();
+    if (this.workbench) {
+      const openWorkbench = this.workbench;
+      openWorkbench.destroy();
+      this.suspendedWorkbench = {
+        incidentId: this.activeIncident?.id ?? '',
+        workbench: openWorkbench,
+      };
+      this.workbench = undefined;
+    }
+    if (this.escapeKeyListener) {
+      window.removeEventListener('keydown', this.escapeKeyListener);
+      this.escapeKeyListener = undefined;
+    }
+    this.modalContainer.classList.add('hidden');
+    this.modalContainer.innerHTML = '';
+    this.mobileControls?.setEnabled(true);
+  }
+
+  /**
+   * Shows the aftermath of an authorised response, including the figure deltas
+   * taken from the simulation ledger and the departmental memos.
+   */
+  public showIncidentOutcome(props: OutcomeViewProps): void {
+    this.releaseTextFocus();
+    this.workbench?.destroy();
+    this.workbench = undefined;
+    this.suspendedWorkbench = undefined;
+    this.modalContainer.innerHTML = '';
+    this.mobileControls?.setEnabled(false);
+    this.attachEscapeListener();
+
+    this.outcomeView = new IncidentOutcomeView(props);
+    this.outcomeView.mount(this.modalContainer);
+    this.modalContainer.classList.remove('hidden');
+  }
+
+  /**
+   * Removes any open incident surface so the resolution flow can take over.
+   */
+  public closeIncidentSurfaces(): void {
+    this.workbench?.destroy();
+    this.workbench = undefined;
+    this.suspendedWorkbench = undefined;
+    this.outcomeView?.destroy();
+    this.outcomeView = undefined;
+  }
+
+  private attachEscapeListener(): void {
     if (this.escapeKeyListener) {
       window.removeEventListener('keydown', this.escapeKeyListener);
     }
     this.escapeKeyListener = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !this.modalContainer.classList.contains('hidden')) {
         e.preventDefault();
-        this.hideIncidentModal();
+        if (this.workbench) {
+          this.stepAwayFromIncident();
+        } else {
+          this.hideIncidentModal();
+        }
         this.callbacks.onStepAway?.();
       }
     };
     window.addEventListener('keydown', this.escapeKeyListener);
-    this.mobileControls?.setEnabled(false);
-
-    const confirmedFacts = [
-      'Tom Bradley (Accounts Payable, Senior Financial Analyst) received an email appearing to come from the CEO requesting urgent review of a confidential financial spreadsheet.',
-      'Tom clicked the external link and submitted his corporate Single Sign-On (SSO) credentials on a spoofed login page.',
-      'Automated telemetry detected a concurrent session authenticated with Tom’s valid tokens originating from Frankfurt, Germany (IP 185.220.101.44) 12 minutes later.',
-      'Tom’s primary workstation in Chicago remains active and connected to internal network services.',
-      'Tom holds authorization to draft and approve supplier wire disbursements up to $50,000 without dual executive signoff.',
-    ];
-
-    const uncertainties = [
-      'Whether the Frankfurt session has already submitted unauthorized payment API requests to banking partners.',
-      'Whether the adversary downloaded confidential client banking details or tax identification records.',
-      'Whether the attacker deployed hidden email forwarding rules or mailbox persistence in Tom’s account.',
-      'Whether Tom is currently aware that his account credentials were harvested.',
-    ];
-
-    const probingQuestions = [
-      {
-        id: 'q-phish-permissions',
-        question: 'Maya, what specific permissions does Tom\'s account hold in our financial portal?',
-        answer: 'Tom is our Senior Accounts Payable Analyst. He has permission to draft invoices, add new supplier routing accounts, and execute wire disbursements up to $50,000 without requiring dual executive authorization. An active session with his credentials can immediately initiate outgoing transfers from our operating treasury.',
-      },
-      {
-        id: 'q-phish-trace',
-        question: 'Can we keep the connection alive and silently trace where the attacker is going?',
-        answer: 'We could maintain packet capture, but monitoring an active attacker inside a payment system is extraordinarily high-risk. Automated adversary scripts can alter routing numbers and dispatch fraudulent wire batches in seconds. By the time our packet filters see the transaction, the bank will have processed it.',
-      },
-      {
-        id: 'q-phish-lockout',
-        question: 'If we sever Tom\'s session immediately, what operational disruption will that cause?',
-        answer: 'Terminating his active tokens takes about 90 seconds. It will immediately freeze tonight\'s $180,000 scheduled vendor payment batch. We\'ll have to pay our bank $3,000 for emergency off-cycle re-audit and processing fees, and Tom will get abruptly locked out of his machine while working. But no unauthorized funds will leave.',
-      },
-      {
-        id: 'q-phish-vpn',
-        question: 'Is there any possibility this Frankfurt login is just a corporate VPN routing hop?',
-        answer: 'Near zero. Our company VPN endpoints are located in Chicago and AWS Virginia. This IP belongs to an unlisted commercial data center in Frankfurt with known abuse flags. Treating this as a routing false positive would be an existential gamble with company cash.',
-      },
-    ];
-
-    const confirmedFactsHtml = confirmedFacts.map((f) => `<li>${f}</li>`).join('');
-    const uncertaintiesHtml = uncertainties.map((u) => `<li>${u}</li>`).join('');
-
-    const probingQuestionsHtml = probingQuestions
-      .map((q) => {
-        return `
-        <div class="qa-item" data-qa-id="${q.id}">
-          <button class="qa-question-btn" type="button">
-            <span class="qa-icon">❓</span>
-            <span class="qa-text">"${q.question}"</span>
-            <span class="qa-chevron">▶</span>
-          </button>
-          <div class="qa-answer hidden">
-            <div class="qa-speaker">
-              <span class="qa-avatar-tag" style="background-color: #0284c7">Maya Lin</span>
-              <span class="qa-role">IT Security Lead</span>
-            </div>
-            <p class="qa-quote">"${q.answer}"</p>
-          </div>
-        </div>
-      `;
-      })
-      .join('');
-
-    // Renders the 4 tactical directive options WITHOUT spoiling numerical score modifiers
-    const choicesHtml = choices
-      .map((choice) => {
-        const isChecked = this.selectedStrategyId === choice.id;
-
-        let badge = 'Tactical Option';
-        let tradeOffText = '';
-        if (choice.id === 'CHOICE_PHISH_LOCKDOWN') {
-          badge = '⚡ Immediate Containment';
-          tradeOffText = 'Terminates active sessions and invalidates tokens within 90 seconds. Halts tonight\'s payment run ($3,000 off-cycle audit fee) and locks Tom out at his desk, but guarantees intruder eviction before transactions clear.';
-        } else if (choice.id === 'CHOICE_PHISH_MONITOR') {
-          badge = '🔍 Passive Surveillance';
-          tradeOffText = 'Leaves session alive under packet trace to gather adversary infrastructure telemetry. High operational exposure: attacker retains active payment gateway access during surveillance.';
-        } else if (choice.id === 'CHOICE_PHISH_VERIFY') {
-          badge = '📞 Direct Verification';
-          tradeOffText = 'Calls Tom at his desk to confirm whether he authorized the login or clicked a spoofed link. Fosters psychological safety and voluntary reporting, but creates a 15-minute response delay.';
-        } else {
-          badge = '🌐 Operational Continuity';
-          tradeOffText = 'Presumes Frankfurt telemetry is an ISP false positive or automated cloud sync hop. Avoids false alarms, but leaves privileged access unmonitored if malicious.';
-        }
-
-        return `
-        <label class="choice-workbench-card ${isChecked ? 'selected' : ''}">
-          <div class="choice-selection-row">
-            <input
-              type="radio"
-              name="executive_strategy"
-              value="${choice.id}"
-              ${isChecked ? 'checked' : ''}
-            />
-            <div class="choice-title-group">
-              <span class="choice-card-label">${choice.label}</span>
-              <span class="rec-badge" style="background: rgba(56, 189, 248, 0.2); border-color: #38bdf8; color: #38bdf8;">${badge}</span>
-            </div>
-          </div>
-          <p class="choice-desc">${choice.description}</p>
-          <div class="choice-factors">
-            <div class="factor-row">
-              <span class="factor-label benefits">Operational Trade-off:</span>
-              <span class="factor-text">${tradeOffText}</span>
-            </div>
-          </div>
-        </label>
-      `;
-      })
-      .join('');
-
-    this.modalContainer.innerHTML = `
-      <div class="modal-dialog incident-dialog colleague-dialogue-dialog">
-        <!-- Dialog Header -->
-        <div class="modal-header it colleague-header">
-          <div class="dept-indicator">
-            <div class="colleague-avatar">ML</div>
-            <div class="colleague-meta">
-              <span class="colleague-name">Maya Lin</span>
-              <span class="colleague-title">Lead Systems Architect & Security Operations</span>
-            </div>
-            <span class="status-live-tag">🔴 EMERGENCY CONSULTATION</span>
-          </div>
-          <button id="btn-dialog-close-x" class="btn-step-away-x" title="Step Away & Review Office (Esc)">✕ Step Away (Esc)</button>
-        </div>
-
-        <div class="modal-body">
-          <!-- Real-Time Telemetry Alert Banner -->
-          <div class="live-telemetry-banner">
-            <div class="telemetry-item">
-              <span class="tel-label">🚨 Target Account</span>
-              <span class="tel-val">Tom Bradley (Accounts Payable)</span>
-            </div>
-            <div class="telemetry-item">
-              <span class="tel-label">🌐 Anomalous Session IP</span>
-              <span class="tel-val">185.220.101.44 (Frankfurt, Germany)</span>
-            </div>
-            <div class="telemetry-item">
-              <span class="tel-label">⚡ Current Activity</span>
-              <span class="tel-val alert">Vendor Payment Gateway (Active)</span>
-            </div>
-          </div>
-
-          <!-- Section 1: Colleague Situation Briefing -->
-          <div class="consultation-section briefing-card">
-            <div class="section-badge-header">
-              <span class="badge-num">1</span>
-              <h3>Maya Lin: "CEO, we have an active security incident."</h3>
-            </div>
-            <div class="briefing-speech-bubble">
-              <p class="spoken-briefing">
-                "Our automated identity sensors flagged a concurrent session on Tom Bradley’s Accounts Payable credentials originating from Frankfurt 12 minutes ago while he is seated right here in our Chicago office. The connection navigated directly into the vendor payment approval queue. If an attacker controls this session, they could alter wire disbursement templates or siphon funds within minutes. How do you want us to proceed?"
-              </p>
-            </div>
-
-            <div class="intel-grid">
-              <div class="intel-column facts">
-                <div class="column-title">📋 Confirmed Telemetry & Facts</div>
-                <ul>${confirmedFactsHtml}</ul>
-              </div>
-              <div class="intel-column uncertainties">
-                <div class="column-title">❓ Key Unknowns & Risks</div>
-                <ul>${uncertaintiesHtml}</ul>
-              </div>
-            </div>
-          </div>
-
-          <!-- Section 2: Probing Inquiries with Maya Lin -->
-          <div class="consultation-section qa-section">
-            <div class="section-badge-header">
-              <span class="badge-num">2</span>
-              <h3>Consult Maya Lin on Operational Details</h3>
-            </div>
-            <p class="section-help">Click any inquiry below to probe Maya on containment risks and system exposure:</p>
-            <div class="qa-list">
-              ${probingQuestionsHtml}
-            </div>
-          </div>
-
-          <!-- Section 3: Authorize Tactical Directive -->
-          <div class="consultation-section workbench-section">
-            <div class="section-badge-header">
-              <span class="badge-num">3</span>
-              <h3>Executive Incident Response Directive</h3>
-            </div>
-
-            <h4 class="workbench-subhead">Select Primary Tactical Command:</h4>
-            <div class="choices-list">
-              ${choicesHtml}
-            </div>
-
-            <!-- Custom Executive Directive & Proposal Field -->
-            <div class="directive-section">
-              <div class="directive-header">
-                <span class="directive-title">✍️ Additional Instructions & Strategic Proposals</span>
-                <span class="directive-hint">Type your directives or proposed alternative in plain English</span>
-              </div>
-              <div class="directive-input-group">
-                <input
-                  id="directive-input"
-                  type="text"
-                  class="directive-input"
-                  placeholder="e.g. Sever the connection immediately and reset Tom's password..."
-                />
-                <button id="btn-submit-directive" class="btn btn-secondary" type="button">Analyze Proposal</button>
-              </div>
-              <div id="directive-feedback" class="directive-feedback hidden"></div>
-            </div>
-
-            <!-- Execution Action Bar -->
-            <div class="workbench-execution-bar colleague-action-bar">
-              <div class="execution-warning">
-                Authorizing an executive directive takes immediate effect across IT, Finance, HR, and Legal.
-              </div>
-              <div class="action-btn-row">
-                <button id="btn-step-away" class="btn btn-secondary" type="button">
-                  🚶 Step Away & Check Office (Esc)
-                </button>
-                <button id="btn-execute-decision" class="btn btn-primary btn-large" type="button">
-                  Authorize Directive & Deploy
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    // 1. Wire Q&A Accordion
-    const qaItems = this.modalContainer.querySelectorAll<HTMLDivElement>('.qa-item');
-    qaItems.forEach((item) => {
-      const btn = item.querySelector('.qa-question-btn');
-      const answer = item.querySelector('.qa-answer');
-      const chevron = item.querySelector('.qa-chevron');
-
-      btn?.addEventListener('click', () => {
-        const isHidden = answer?.classList.contains('hidden');
-        if (isHidden) {
-          answer?.classList.remove('hidden');
-          chevron?.classList.add('rotated');
-          item.classList.add('expanded');
-        } else {
-          answer?.classList.add('hidden');
-          chevron?.classList.remove('rotated');
-          item.classList.remove('expanded');
-        }
-      });
-    });
-
-    // 2. Wire Strategy Radio Selection
-    const strategyRadios = this.modalContainer.querySelectorAll<HTMLInputElement>(
-      'input[name="executive_strategy"]'
-    );
-    strategyRadios.forEach((radio) => {
-      radio.addEventListener('change', () => {
-        if (radio.checked) {
-          this.selectedStrategyId = radio.value;
-          this.modalContainer.querySelectorAll('.choice-workbench-card').forEach((card) => {
-            card.classList.remove('selected');
-          });
-          radio.closest('.choice-workbench-card')?.classList.add('selected');
-        }
-      });
-    });
-
-    // 3. Wire Directive Input & Natural Language Matcher
-    const directiveInput = this.modalContainer.querySelector<HTMLInputElement>('#directive-input');
-    const submitBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-submit-directive');
-    const feedbackBox = this.modalContainer.querySelector<HTMLDivElement>('#directive-feedback');
-
-    const evaluateDirective = () => {
-      if (!directiveInput || !feedbackBox) return;
-      const text = directiveInput.value.trim();
-      if (!text) {
-        feedbackBox.classList.add('hidden');
-        return;
-      }
-
-      const match = matchPlayerDirective(text, choices);
-
-      if (match.matched && match.choiceId && match.matchedChoice) {
-        const matched = match.matchedChoice;
-        feedbackBox.className = 'directive-feedback success';
-        feedbackBox.innerHTML = `
-          <div class="feedback-msg">
-            <strong>Identified Directive: ${matched.label}</strong>
-            <p>${match.interpretation}</p>
-          </div>
-          <button id="btn-apply-strategy" class="btn btn-primary btn-sm" type="button">Select This Directive</button>
-        `;
-        const applyBtn = feedbackBox.querySelector<HTMLButtonElement>('#btn-apply-strategy');
-        applyBtn?.addEventListener('click', () => {
-          if (match.choiceId) {
-            this.selectedStrategyId = match.choiceId;
-            const targetRadio = this.modalContainer.querySelector<HTMLInputElement>(
-              `input[value="${match.choiceId}"]`
-            );
-            if (targetRadio) {
-              targetRadio.checked = true;
-              this.modalContainer.querySelectorAll('.choice-workbench-card').forEach((c) => {
-                c.classList.remove('selected');
-              });
-              targetRadio.closest('.choice-workbench-card')?.classList.add('selected');
-            }
-          }
-        });
-      } else {
-        feedbackBox.className = 'directive-feedback info';
-        feedbackBox.innerHTML = `
-          <div class="feedback-msg">
-            <strong>Supplementary Executive Directives Recognized</strong>
-            <p>Your notes will be attached to the authorized departmental implementation order.</p>
-          </div>
-        `;
-      }
-      feedbackBox.classList.remove('hidden');
-    };
-
-    submitBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      evaluateDirective();
-    });
-
-    directiveInput?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        evaluateDirective();
-      }
-    });
-
-    // 4. Wire Step Away Buttons
-    const stepAwayBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-step-away');
-    const closeXBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-dialog-close-x');
-    const triggerStepAway = () => {
-      this.hideIncidentModal();
-      this.callbacks.onStepAway?.();
-    };
-    stepAwayBtn?.addEventListener('click', triggerStepAway);
-    closeXBtn?.addEventListener('click', triggerStepAway);
-
-    // 5. Wire Final Execution
-    const executeBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-execute-decision');
-    executeBtn?.addEventListener('click', () => {
-      if (!this.selectedStrategyId) {
-        alert('Please select a tactical response directive before authorizing.');
-        return;
-      }
-      const additionalNotes = directiveInput?.value.trim() ?? '';
-      this.callbacks.onSelectChoice(this.selectedStrategyId, additionalNotes);
-    });
-
-    this.modalContainer.classList.remove('hidden');
   }
 
   /**
@@ -1057,9 +820,13 @@ export class UIManager {
    * 3. Interactive Probing Inquiries (Q&A Accordion)
    * 4. Tailored Decision Workbench with operational safeguards & natural typing
    */
-  public showIncidentModal(incident: Incident, choices: readonly EvaluatedChoice[]): void {
-    if (incident.id === 'INC_PHISH_1') {
-      this.showPhishingModal(incident, choices);
+  public showIncidentModal(
+    incident: Incident,
+    choices: readonly EvaluatedChoice[],
+    interactionSpec?: IncidentInteractionSpec
+  ): void {
+    if (interactionSpec) {
+      this.showIncidentWorkbench(incident, interactionSpec);
       return;
     }
 
@@ -1416,10 +1183,16 @@ export class UIManager {
    * Closes the incident modal.
    */
   public hideIncidentModal(): void {
+    this.releaseTextFocus();
     if (this.escapeKeyListener) {
       window.removeEventListener('keydown', this.escapeKeyListener);
       this.escapeKeyListener = undefined;
     }
+    this.workbench?.destroy();
+    this.workbench = undefined;
+    this.suspendedWorkbench = undefined;
+    this.outcomeView?.destroy();
+    this.outcomeView = undefined;
     this.modalContainer.classList.add('hidden');
     this.modalContainer.innerHTML = '';
     this.mobileControls?.setEnabled(true);

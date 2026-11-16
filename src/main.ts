@@ -3,11 +3,21 @@
  *
  * Connects the headless CompanySimulation engine, the Phaser 2D OfficeScene,
  * and the DOM-based UIManager into a unified, responsive interactive application.
+ *
+ * Incident 1 is answered through a composed response plan: the workbench builds
+ * the plan, the evaluator turns it into consequences, and the engine applies them
+ * so cash, burn and metrics stay authoritative.
  */
 
 import Phaser from 'phaser';
 import { CompanySimulation } from './simulation/CompanySimulation.ts';
 import { PHISHING_SCENARIO } from './simulation/phishingIncident.data.ts';
+import { PHISHING_INTERACTION } from './incidents/phishing/phishingInteraction.data.ts';
+import { buildPhishingOutcome } from './incidents/phishing/phishingAftermath.ts';
+import type { PhishingOutcome } from './incidents/phishing/phishingAftermath.ts';
+import type { ResponseAssessment } from './incidents/responseEvaluator.ts';
+import { evaluateResponsePlan } from './incidents/responseEvaluator.ts';
+import type { ResponsePlan } from './incidents/interactionModel.ts';
 import type { DepartmentKey } from './game/OfficeScene.ts';
 import { OfficeScene } from './game/OfficeScene.ts';
 import { UIManager } from './ui/UIManager.ts';
@@ -15,9 +25,16 @@ import { buildCrossDeptReaction } from './ui/commsData.ts';
 import { buildPhishingReactions } from './ui/phishingComms.ts';
 import './style.css';
 
+interface CommittedResolution {
+  readonly assessment: ResponseAssessment;
+  readonly outcome: PhishingOutcome;
+  readonly choiceId: string;
+}
+
 // 1. Instantiate the authoritative headless simulation engine with the Phishing vertical slice
 let sim = new CompanySimulation(PHISHING_SCENARIO);
 let lastChoiceId: string | null = null;
+let lastResolution: CommittedResolution | null = null;
 
 // 2. Instantiate the office world scene
 const officeScene = new OfficeScene();
@@ -25,6 +42,8 @@ const officeScene = new OfficeScene();
 // 3. Forward declarations for orchestrator handlers
 let handleOpenIncident: () => void;
 let handleSelectChoice: (choiceId: string, additionalInstructions?: string) => void;
+let handleCommitResponse: (plan: ResponsePlan) => void;
+let handleReturnToOffice: () => void;
 let handleDismissResolution: () => void;
 let handleRestartSimulation: () => void;
 
@@ -32,6 +51,9 @@ let handleRestartSimulation: () => void;
 const ui = new UIManager({
   onSelectChoice: (choiceId: string, additionalInstructions?: string) => {
     handleSelectChoice(choiceId, additionalInstructions);
+  },
+  onCommitResponse: (plan: ResponsePlan) => {
+    handleCommitResponse(plan);
   },
   onDismissResolution: () => {
     handleDismissResolution();
@@ -82,15 +104,78 @@ handleOpenIncident = () => {
     return;
   }
 
-  // Freeze character movement while decision modal is open
+  // Freeze character movement while the consultation is open
   officeScene.setMovementLocked(true);
   ui.hideInteractionPrompt();
 
-  // Retrieve dynamically evaluated choices with active modifier locks and deltas
   const choices = sim.getEvaluatedChoices();
-  ui.showIncidentModal(incident, choices);
+  const interactionSpec =
+    incident.id === PHISHING_INTERACTION.incidentId ? PHISHING_INTERACTION : undefined;
+
+  ui.showIncidentModal(incident, choices, interactionSpec);
 };
 
+/**
+ * Commits a composed response plan: evaluate it, hand the composed impact to the
+ * engine, then show the company's reaction and log the memos in the comms hub.
+ */
+handleCommitResponse = (plan: ResponsePlan) => {
+  const incident = sim.getActiveIncident();
+  if (!incident || incident.id !== PHISHING_INTERACTION.incidentId) {
+    console.warn('[Orchestrator] No phishing incident is awaiting a response.');
+    return;
+  }
+
+  const assessment = evaluateResponsePlan(PHISHING_INTERACTION, plan);
+  const result = sim.resolveDecision(assessment.baseChoiceId, {
+    label: assessment.planLabel,
+    rationale: assessment.summary,
+    impactOverride: assessment.impact,
+  });
+
+  if (!result.success) {
+    console.warn('[Orchestrator] Engine rejected the response plan:', result.message);
+    return;
+  }
+
+  lastChoiceId = assessment.baseChoiceId;
+
+  const figures = {
+    cashDelta: result.record.immediateFinancialDeltas.cashDelta,
+    itDelta: result.record.immediateMetricDeltas.itDelta,
+    hrDelta: result.record.immediateMetricDeltas.hrDelta,
+  };
+
+  const outcome = buildPhishingOutcome(PHISHING_INTERACTION, plan, assessment, figures);
+  lastResolution = { assessment, outcome, choiceId: assessment.baseChoiceId };
+
+  ui.updateHUD(result.updatedState);
+  // File the memos quietly: the outcome screen already shows them, and the
+  // toasts follow once the player is back in the office.
+  outcome.memos.forEach((memo) => ui.addCrossDeptReaction(memo, { silent: true }));
+
+  ui.showIncidentOutcome({
+    verdict: assessment.verdict,
+    verdictLabel: assessment.verdictLabel,
+    headline: assessment.headline,
+    summary: assessment.summary,
+    maya: outcome.maya,
+    memos: outcome.memos,
+    vectors: assessment.vectors,
+    actions: assessment.actionResults,
+    figures,
+    minutesSpent: assessment.minutesSpent,
+    closeAtMinute: assessment.closeAtMinute,
+    officeLabel: outcome.office.label,
+    onReturn: () => {
+      handleReturnToOffice();
+    },
+  });
+};
+
+/**
+ * Legacy path kept for the multi-turn scenario's single-option decisions.
+ */
 handleSelectChoice = (choiceId: string, _additionalInstructions?: string) => {
   lastChoiceId = choiceId;
   const result = sim.resolveDecision(choiceId);
@@ -100,39 +185,27 @@ handleSelectChoice = (choiceId: string, _additionalInstructions?: string) => {
     return;
   }
 
-  // If this is the Phishing incident, build full cross-department reaction package
   if (choiceId.startsWith('CHOICE_PHISH_')) {
     const pkg = buildPhishingReactions(choiceId);
-
-    // Dispatch all 4 departmental reactions (IT, Finance, HR, Legal) into the Comms Hub
     pkg.reactions.forEach((reaction) => {
       ui.addCrossDeptReaction(reaction);
     });
-
-    // Update executive HUD with post-decision financial & metric state
     ui.updateHUD(result.updatedState);
-
-    // Present resolution aftermath modal showing executive summary and cross-department memos
-    ui.showResolutionModal(
-      result.record,
-      result.nextPhase,
-      sim.getState().isInsolvent,
-      pkg.reactions
-    );
-  } else {
-    // Fallback for multi-turn scenarios
-    const reaction = buildCrossDeptReaction(choiceId, result.record, result.updatedState);
-    if (reaction) {
-      ui.addCrossDeptReaction(reaction);
-    }
-    ui.updateHUD(result.updatedState);
-    ui.showResolutionModal(
-      result.record,
-      result.nextPhase,
-      sim.getState().isInsolvent,
-      reaction
-    );
+    ui.showResolutionModal(result.record, result.nextPhase, sim.getState().isInsolvent, pkg.reactions);
+    return;
   }
+
+  const reaction = buildCrossDeptReaction(choiceId, result.record, result.updatedState);
+  if (reaction) {
+    ui.addCrossDeptReaction(reaction);
+  }
+  ui.updateHUD(result.updatedState);
+  ui.showResolutionModal(result.record, result.nextPhase, sim.getState().isInsolvent, reaction);
+};
+
+handleReturnToOffice = () => {
+  ui.hideIncidentModal();
+  handleDismissResolution();
 };
 
 handleDismissResolution = () => {
@@ -164,25 +237,30 @@ handleDismissResolution = () => {
     return;
   }
 
-  // Phishing Incident Vertical Slice Completion: Return to office & observe company state
-  if (lastChoiceId && lastChoiceId.startsWith('CHOICE_PHISH_')) {
-    // 1. Restore player movement to allow exploring the changed office
+  // Incident 1: return to the office and let the player see the changed workplace
+  if (lastResolution) {
     officeScene.setMovementLocked(false);
-
-    // 2. Transition IT beacon to calm resolved state
-    officeScene.setDepartmentResolved('IT', 'Threat Neutralized');
-
-    // 3. Fire sequential toast alerts across IT, Finance, HR, Legal
-    const pkg = buildPhishingReactions(lastChoiceId);
-    ui.showSequentialToasts(pkg.toastAlerts);
-
-    // 4. Inject debrief button into HUD so player can open performance report at will
+    officeScene.applyIncidentOutcome(lastResolution.outcome.office);
+    ui.showSequentialToasts(lastResolution.outcome.toasts);
     ui.showDebriefButton(() => {
       officeScene.setMovementLocked(true);
       const report = sim.generatePerformanceReport();
       ui.showPerformanceReport(report);
     });
+    return;
+  }
 
+  // Legacy phishing path (choice resolved without a composed plan)
+  if (lastChoiceId && lastChoiceId.startsWith('CHOICE_PHISH_')) {
+    officeScene.setMovementLocked(false);
+    officeScene.setDepartmentResolved('IT', 'Threat Neutralized');
+    const pkg = buildPhishingReactions(lastChoiceId);
+    ui.showSequentialToasts(pkg.toastAlerts);
+    ui.showDebriefButton(() => {
+      officeScene.setMovementLocked(true);
+      const report = sim.generatePerformanceReport();
+      ui.showPerformanceReport(report);
+    });
     return;
   }
 
@@ -204,7 +282,6 @@ handleDismissResolution = () => {
     ui.notifyNewIncident(nextIncident);
   }
 
-  // Restore player movement for office exploration
   officeScene.setMovementLocked(false);
 };
 
@@ -212,8 +289,10 @@ handleRestartSimulation = () => {
   // Reconstruct clean simulation engine from phishing scenario conditions
   sim = new CompanySimulation(PHISHING_SCENARIO);
   lastChoiceId = null;
+  lastResolution = null;
 
   // Reset Comms Hub and visual alert
+  ui.closeIncidentSurfaces();
   ui.resetCommsHub();
   officeScene.resetEmergencyAlert();
 

@@ -5,6 +5,7 @@ import {
   isModifierActive,
   shouldIgnoreGameInput,
 } from './keyboardIsolation.ts';
+import type { OfficeOutcome, OfficeTone } from '../incidents/outcomeTypes.ts';
 
 /**
  * Keyboard keys used for 8-directional movement.
@@ -60,6 +61,11 @@ export class OfficeScene extends Phaser.Scene {
   private notificationRadar2!: Phaser.GameObjects.Arc;
   private isDepartmentResolved: boolean = false;
   private serverLeds: Phaser.GameObjects.Rectangle[] = [];
+
+  // The AP analyst at the centre of the phishing incident, so the office can
+  // reflect what happened to his account after the response is authorised.
+  private tomTag?: Phaser.GameObjects.Text;
+  private tomBody?: Phaser.GameObjects.Rectangle;
 
   // Emergency collapse visual objects
   private emergencyOverlay!: Phaser.GameObjects.Rectangle;
@@ -229,6 +235,18 @@ export class OfficeScene extends Phaser.Scene {
       if (this.input?.keyboard) {
         this.input.keyboard.resetKeys();
       }
+      return;
+    }
+
+    // Handing control back to the player always restores the keyboard. Panels can
+    // be torn down while their text field still holds focus, in which case no
+    // focusout event arrives and the scene would stay unable to move.
+    if (!this.isTextInputFocused() && this.input?.keyboard) {
+      this.input.keyboard.enabled = true;
+      if (this.input.keyboard.manager) {
+        this.input.keyboard.manager.enabled = true;
+      }
+      this.input.keyboard.resetKeys();
     }
   }
 
@@ -463,6 +481,104 @@ export class OfficeScene extends Phaser.Scene {
       this.notificationRadar1.setVisible(false);
       this.notificationRadar2.setVisible(false);
       this.notificationContainer.setVisible(true);
+    }
+  }
+
+  /**
+   * Applies a resolved incident's aftermath to the office: the department marker,
+   * the AP analyst's visible status, and a camera jolt when the outcome is bad.
+   *
+   * Deliberately not built on setDepartmentResolved, so a compromised or ignored
+   * incident never shows the green "contained" treatment.
+   */
+  public applyIncidentOutcome(outcome: OfficeOutcome): void {
+    const palette: Record<
+      OfficeTone,
+      {
+        badgePrefix: string;
+        badgeBg: string;
+        beacon: number;
+        beaconLabel: string;
+        tomLabel: string;
+        tomColor: string;
+        tomBg: string;
+        tomFill: number;
+      }
+    > = {
+      contained: {
+        badgePrefix: '✅ IT: ',
+        badgeBg: '#059669f0',
+        beacon: 0x34d399,
+        beaconLabel: '✅ Incident closed',
+        tomLabel: '💼 Tom Bradley (AP) — signed out, talking to HR',
+        tomColor: '#6ee7b7',
+        tomBg: '#06281eee',
+        tomFill: 0x15803d,
+      },
+      recovering: {
+        badgePrefix: '🟡 IT: ',
+        badgeBg: '#b45309f0',
+        beacon: 0xfbbf24,
+        beaconLabel: '🟡 Contained — working the fallout',
+        tomLabel: '💼 Tom Bradley (AP) — working from paper',
+        tomColor: '#fde68a',
+        tomBg: '#241808ee',
+        tomFill: 0xb45309,
+      },
+      compromised: {
+        badgePrefix: '🚨 IT: ',
+        badgeBg: '#dc2626f0',
+        beacon: 0xef4444,
+        beaconLabel: '🚨 Breach confirmed',
+        tomLabel: '⚠️ Tom Bradley (AP) — account exposed',
+        tomColor: '#fca5a5',
+        tomBg: '#450a0aee',
+        tomFill: 0x991b1b,
+      },
+      negligent: {
+        badgePrefix: '⚠️ IT: ',
+        badgeBg: '#991b1bf0',
+        beacon: 0xef4444,
+        beaconLabel: '⚠️ Session left open',
+        tomLabel: '⚠️ Tom Bradley (AP) — still signed in',
+        tomColor: '#fca5a5',
+        tomBg: '#450a0aee',
+        tomFill: 0x7f1d1d,
+      },
+    };
+
+    const style = palette[outcome.tone];
+    this.isDepartmentResolved = true;
+
+    if (this.notificationContainer && this.notificationBadge) {
+      const point = DEPARTMENT_POINTS.IT;
+      this.notificationContainer.setPosition(point.x, point.y - 96);
+      this.notificationBadge.setText(`${style.badgePrefix}${outcome.label}`);
+      this.notificationBadge.setBackgroundColor(style.badgeBg);
+      this.notificationRadar1.setVisible(false);
+      this.notificationRadar2.setVisible(false);
+      this.notificationContainer.setVisible(true);
+    }
+
+    // The department marker carries the outcome; the "briefing waiting" beacon
+    // and its key prompt are retired because there is nothing left to consult.
+    if (this.beaconCircle && this.beaconTag) {
+      this.beaconCircle.setFillStyle(style.beacon, 0.22);
+      this.beaconCircle.setStrokeStyle(2, style.beacon, 0.85);
+      this.beaconTag.setText(style.beaconLabel);
+      this.beaconTag.setBackgroundColor(style.badgeBg);
+      this.beaconTag.setVisible(false);
+    }
+
+    if (this.tomTag) {
+      this.tomTag.setText(style.tomLabel);
+      this.tomTag.setColor(style.tomColor);
+      this.tomTag.setBackgroundColor(style.tomBg);
+    }
+    this.tomBody?.setFillStyle(style.tomFill);
+
+    if (outcome.tone === 'compromised' || outcome.tone === 'negligent') {
+      this.cameras.main.shake(320, 0.007);
     }
   }
 
@@ -895,6 +1011,8 @@ export class OfficeScene extends Phaser.Scene {
     });
     tomTag.setOrigin(0.5, 0.5);
     tomTag.setDepth(9);
+    this.tomTag = tomTag;
+    this.tomBody = tomBody;
 
     // 4. Rachel Sterling (General Counsel) at Legal Desk
     const rachelBody = this.add.rectangle(1360, 810, 26, 26, 0x6366f1);
@@ -1175,7 +1293,7 @@ export class OfficeScene extends Phaser.Scene {
     });
 
     // Corridor Directional Signage
-    this.add.text(800, 220, '← IT OPERATIONS    |    MAIN ATRIUM    |    HUMAN RESOURCES →', {
+    this.add.text(800, 220, '← IT OPERATIONS    |    MAIN LOBBY    |    HUMAN RESOURCES →', {
       ...textStyle,
       fontSize: '13px',
       fontStyle: 'bold',

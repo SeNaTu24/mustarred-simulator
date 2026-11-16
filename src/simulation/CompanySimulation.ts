@@ -19,6 +19,7 @@ import type {
   CompanyGrade,
   CompanyMetrics,
   DecisionLedgerRecord,
+  DecisionSubmission,
   DelayedEffect,
   DelayedEffectResolution,
   EvaluatedChoice,
@@ -229,7 +230,7 @@ export class CompanySimulation {
   /**
    * Resolves a decision by option ID on the active incident.
    */
-  public resolveDecision(choiceId: string): ResolutionResult {
+  public resolveDecision(choiceId: string, submission?: DecisionSubmission): ResolutionResult {
     if (!this.activeIncident) {
       return {
         success: false,
@@ -237,14 +238,21 @@ export class CompanySimulation {
         message: 'No active incident is currently awaiting a decision.',
       };
     }
-    return this.resolveIncident(this.activeIncident.id, choiceId);
+    return this.resolveIncident(this.activeIncident.id, choiceId, submission);
   }
 
   /**
    * Resolves an incident with a chosen option ID.
    * Guarantees zero state mutation if the operation is invalid or the choice is locked.
+   *
+   * `submission` is only used for incidents answered through a composed response
+   * plan; without it the choice's stored impact is applied exactly as before.
    */
-  public resolveIncident(incidentId: string, choiceId: string): ResolutionResult {
+  public resolveIncident(
+    incidentId: string,
+    choiceId: string,
+    submission?: DecisionSubmission
+  ): ResolutionResult {
     // 1. Validate simulation phase
     if (this.phase === 'INSOLVENT') {
       return {
@@ -303,7 +311,16 @@ export class CompanySimulation {
     const stateBefore = this.createStateSnapshot();
 
     // 6. STAGE C: Apply Immediate Choice Impacts
-    const impact = evaluatedChoice.effectiveImpact;
+    const impact: ChoiceImpact = submission?.impactOverride
+      ? {
+          cashDelta: Math.round(submission.impactOverride.cashDelta),
+          grossBurnRateDelta: Math.round(submission.impactOverride.grossBurnRateDelta),
+          debtDelta: Math.round(submission.impactOverride.debtDelta),
+          hrDelta: submission.impactOverride.hrDelta,
+          itDelta: submission.impactOverride.itDelta,
+          operationalExplanation: submission.impactOverride.operationalExplanation,
+        }
+      : evaluatedChoice.effectiveImpact;
     this.cash = (this.cash + impact.cashDelta) as Cents;
     this.grossMonthlyBurn = Math.max(0, this.grossMonthlyBurn + impact.grossBurnRateDelta) as Cents;
 
@@ -423,8 +440,8 @@ export class CompanySimulation {
       incidentTitle: this.activeIncident.title,
       department: this.activeIncident.department,
       chosenOptionId: evaluatedChoice.id,
-      chosenOptionLabel: evaluatedChoice.label,
-      executiveRationale: evaluatedChoice.executiveRationale,
+      chosenOptionLabel: submission?.label ?? evaluatedChoice.label,
+      executiveRationale: submission?.rationale ?? evaluatedChoice.executiveRationale,
       effectiveChoiceImpact: impact,
       immediateFinancialDeltas: {
         cashDelta: impact.cashDelta,
@@ -446,7 +463,7 @@ export class CompanySimulation {
       delayedEffectsScheduled: Object.freeze(scheduledList),
       delayedEffectsResolvedThisTurn: Object.freeze([...this.currentTurnResolvedDelayedEffects]),
       businessCausality: impact.operationalExplanation,
-      learningFeedback: evaluatedChoice.learningFeedback,
+      learningFeedback: submission?.learningFeedbackOverride ?? evaluatedChoice.learningFeedback,
       stateBefore,
       stateAfter,
     };
