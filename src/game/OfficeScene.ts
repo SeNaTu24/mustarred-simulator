@@ -49,6 +49,10 @@ export class OfficeScene extends Phaser.Scene {
   private isMovementLocked: boolean = false;
   private isModifierHeld: boolean = false;
 
+  // Mobile virtual touch movement vector [-1, 1]
+  private virtualDx: number = 0;
+  private virtualDy: number = 0;
+
   // Animated department notification system
   private notificationContainer!: Phaser.GameObjects.Container;
   private notificationBadge!: Phaser.GameObjects.Text;
@@ -174,11 +178,16 @@ export class OfficeScene extends Phaser.Scene {
       dy += 1;
     }
 
+    // Combine with virtual movement input from mobile joystick
+    dx += this.virtualDx;
+    dy += this.virtualDy;
+
     // Normalize diagonal movement vector so diagonal travel matches linear speed
     const length = Math.hypot(dx, dy);
     if (length > 0) {
-      const vx = (dx / length) * this.playerSpeed;
-      const vy = (dy / length) * this.playerSpeed;
+      const scale = length > 1 ? 1 / length : 1;
+      const vx = dx * scale * this.playerSpeed;
+      const vy = dy * scale * this.playerSpeed;
       body.setVelocity(vx, vy);
     } else {
       body.setVelocity(0, 0);
@@ -212,6 +221,8 @@ export class OfficeScene extends Phaser.Scene {
   public setMovementLocked(locked: boolean): void {
     this.isMovementLocked = locked;
     if (locked) {
+      this.virtualDx = 0;
+      this.virtualDy = 0;
       if (this.player?.body) {
         (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
       }
@@ -219,6 +230,52 @@ export class OfficeScene extends Phaser.Scene {
         this.input.keyboard.resetKeys();
       }
     }
+  }
+
+  /**
+   * Sets the virtual movement vector [-1, 1] from mobile controls.
+   */
+  public setVirtualMovement(dx: number, dy: number): void {
+    this.virtualDx = dx;
+    this.virtualDy = dy;
+  }
+
+  /**
+   * Returns current virtual movement vector.
+   */
+  public getVirtualMovement(): { dx: number; dy: number } {
+    return { dx: this.virtualDx, dy: this.virtualDy };
+  }
+
+  /**
+   * Triggers the player's interaction with the nearby active department,
+   * identical to pressing [E] or [Space].
+   */
+  public triggerInteractionAction(): boolean {
+    if (this.isMovementLocked || this.isTextInputFocused() || this.isModifierHeld) {
+      return false;
+    }
+    if (this.activeDepartment && this.isPlayerInRange) {
+      this.triggerInteractionAnimation(this.activeDepartment, () => {
+        this.onInteract?.(this.activeDepartment!);
+      });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Checks whether the player is currently within interaction range of the active department.
+   */
+  public getIsPlayerInRange(): boolean {
+    return this.isPlayerInRange;
+  }
+
+  /**
+   * Checks whether player movement is currently locked.
+   */
+  public getIsMovementLocked(): boolean {
+    return this.isMovementLocked;
   }
 
   /**

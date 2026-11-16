@@ -45,6 +45,15 @@ const ui = new UIManager({
   onStepAway: () => {
     officeScene.setMovementLocked(false);
   },
+  onVirtualMove: (dx: number, dy: number) => {
+    officeScene.setVirtualMovement(dx, dy);
+  },
+  onVirtualInteract: () => {
+    const handled = officeScene.triggerInteractionAction();
+    if (!handled && officeScene.getIsPlayerInRange()) {
+      handleOpenIncident();
+    }
+  },
 });
 
 // 5. Wire OfficeScene proximity and keyboard interaction callbacks

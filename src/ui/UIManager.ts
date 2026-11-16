@@ -28,6 +28,7 @@ import {
   INCIDENT_DIALOGUES,
   type CrossDeptReaction,
 } from './commsData.ts';
+import { MobileControls } from './MobileControls.ts';
 
 export interface UIManagerCallbacks {
   readonly onSelectChoice: (choiceId: string, additionalInstructions?: string) => void;
@@ -36,6 +37,8 @@ export interface UIManagerCallbacks {
   readonly onPromptInteract: () => void;
   readonly onStepAway?: () => void;
   readonly onOpenCommsHub?: () => void;
+  readonly onVirtualMove?: (dx: number, dy: number) => void;
+  readonly onVirtualInteract?: () => void;
 }
 
 interface CommsMessage {
@@ -60,6 +63,7 @@ export class UIManager {
   private commsDrawerElement!: HTMLElement;
   private promptElement!: HTMLElement;
   private modalContainer!: HTMLElement;
+  private mobileControls?: MobileControls;
 
   // Living Comms Hub state
   private messages: CommsMessage[] = [];
@@ -76,6 +80,10 @@ export class UIManager {
 
   public getActiveChoices(): readonly EvaluatedChoice[] {
     return this.activeChoices;
+  }
+
+  public getMobileControls(): MobileControls | undefined {
+    return this.mobileControls;
   }
 
   constructor(callbacks: UIManagerCallbacks) {
@@ -123,6 +131,15 @@ export class UIManager {
     this.modalContainer = document.createElement('div');
     this.modalContainer.className = 'modal-backdrop hidden';
     this.container.appendChild(this.modalContainer);
+
+    // Mobile Virtual Joystick & Prominent Interaction Button
+    if (this.callbacks.onVirtualMove || this.callbacks.onVirtualInteract) {
+      this.mobileControls = new MobileControls({
+        container: this.container,
+        onMove: (dx, dy) => this.callbacks.onVirtualMove?.(dx, dy),
+        onInteract: () => this.callbacks.onVirtualInteract?.(),
+      });
+    }
   }
 
   // ==========================================================================
@@ -457,8 +474,10 @@ export class UIManager {
       this.updateHUDCommsBadge();
       this.commsDrawerElement.classList.remove('hidden');
       this.renderCommsDrawer();
+      this.mobileControls?.setEnabled(false);
     } else {
       this.commsDrawerElement.classList.add('hidden');
+      this.mobileControls?.setEnabled(true);
     }
 
     this.updateHUDCommsBadge();
@@ -644,6 +663,7 @@ export class UIManager {
       <span class="prompt-hint">Topic: "${incidentTitle}" · Press [E] or [Space]</span>
     `;
     this.promptElement.classList.remove('hidden');
+    this.mobileControls?.setDepartmentInRange(true, deptName);
   }
 
   /**
@@ -651,6 +671,7 @@ export class UIManager {
    */
   public hideInteractionPrompt(): void {
     this.promptElement.classList.add('hidden');
+    this.mobileControls?.setDepartmentInRange(false);
   }
 
   /**
@@ -675,6 +696,7 @@ export class UIManager {
       }
     };
     window.addEventListener('keydown', this.escapeKeyListener);
+    this.mobileControls?.setEnabled(false);
 
     const confirmedFacts = [
       'Tom Bradley (Accounts Payable, Senior Financial Analyst) received an email appearing to come from the CEO requesting urgent review of a confidential financial spreadsheet.',
@@ -1041,6 +1063,8 @@ export class UIManager {
       return;
     }
 
+    this.mobileControls?.setEnabled(false);
+
     this.activeIncident = incident;
     this.activeChoices = choices;
     this.answeredQuestions.clear();
@@ -1398,6 +1422,7 @@ export class UIManager {
     }
     this.modalContainer.classList.add('hidden');
     this.modalContainer.innerHTML = '';
+    this.mobileControls?.setEnabled(true);
   }
 
   // ==========================================================================
@@ -1542,6 +1567,7 @@ export class UIManager {
       this.callbacks.onDismissResolution();
     });
 
+    this.mobileControls?.setEnabled(false);
     this.modalContainer.classList.remove('hidden');
   }
 
@@ -1607,6 +1633,7 @@ export class UIManager {
       this.callbacks.onRestart();
     });
 
+    this.mobileControls?.setEnabled(false);
     this.modalContainer.classList.remove('hidden');
   }
 
@@ -1713,6 +1740,7 @@ export class UIManager {
       this.callbacks.onRestart();
     });
 
+    this.mobileControls?.setEnabled(false);
     this.modalContainer.classList.remove('hidden');
   }
 
@@ -1722,6 +1750,7 @@ export class UIManager {
   public hidePerformanceReport(): void {
     this.modalContainer.classList.add('hidden');
     this.modalContainer.innerHTML = '';
+    this.mobileControls?.setEnabled(true);
   }
 
   // ==========================================================================
