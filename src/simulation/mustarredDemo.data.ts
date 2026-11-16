@@ -43,11 +43,11 @@ export const DEMO_INITIAL_CONDITIONS: ScenarioInitialConditions = {
 export const CHOICES_TURN_1: readonly ScenarioChoice[] = [
   {
     id: 'CHOICE_1A',
-    label: 'Forensic Investigation & Clean Patch',
+    label: 'Hire External Security Specialists for Full Forensic Audit & Patch',
     description:
-      'Retain an external cybersecurity firm to conduct a comprehensive root-cause forensic audit, cleanly patch the zero-day database exploit, and harden production security pipelines.',
+      'Engage an elite cybersecurity firm on an emergency retainer. They will analyze server memory dumps, verify whether customer data was exfiltrated, and build a verified, hardened patch for the database endpoint.',
     executiveRationale:
-      'Prioritizes systemic infrastructure integrity and security posture over short-term capital preservation.',
+      'Prioritize root-cause engineering and customer trust over short-term cash preservation.',
     baseImpact: {
       cashDelta: -3_000_000, // -$30,000
       grossBurnRateDelta: 0,
@@ -55,24 +55,24 @@ export const CHOICES_TURN_1: readonly ScenarioChoice[] = [
       hrDelta: -5,
       itDelta: 20,
       operationalExplanation:
-        'Engages top-tier forensic consultants. Eradicates the exploit and restores infrastructure confidence (+20 IT Stability), with minor audit overhead (-5 HR Morale) and $30,000 upfront expenditure.',
+        'Apex Cyber Defense completed a full 48-hour forensic audit and deployed a verified patch. Customer records are secured and infrastructure stability improved significantly, though the $30,000 fee reduces cash reserves and staff spent long hours cooperating with auditors.',
     },
     learningFeedback: {
       corePrinciple: 'Root-Cause Remediation vs. Technical Debt',
       tradeoffSummary:
-        'Investing in thorough technical remediation protects long-term stability and customer trust, though it immediately drains liquid reserves.',
+        'Hiring top specialists completely eradicates the underlying vulnerability and restores operational confidence, but requires a significant upfront cash expenditure that tightens your runway.',
       risksCreated: [
-        'Depletes cash reserves by $30,000, tightening financial runway for subsequent quarters.',
+        'Drains $30,000 in liquid reserves, leaving less financial buffer for upcoming quarters.',
       ],
     },
   },
   {
     id: 'CHOICE_1B',
-    label: 'Emergency In-House Hotfix & Silent Monitoring',
+    label: 'Deploy an In-House Emergency Patch & Monitor Silently',
     description:
-      'Instruct internal tech leads to quickly deploy an emergency hotfix and monitor telemetry silently, avoiding expensive forensic consultants and public disclosure.',
+      'Instruct the backend team to push a quick internal patch tonight to block the vulnerable API call. Avoid hiring external consultants and keep the incident confidential to prevent client alarm.',
     executiveRationale:
-      'Conserves immediate liquid capital while attempting rapid operational containment.',
+      'Conserve cash and contain the problem quickly without outside disruption or public attention.',
     baseImpact: {
       cashDelta: -500_000, // -$5,000
       grossBurnRateDelta: 0,
@@ -80,7 +80,7 @@ export const CHOICES_TURN_1: readonly ScenarioChoice[] = [
       hrDelta: 0,
       itDelta: -25,
       operationalExplanation:
-        'Applies a quick patch for only $5,000. However, the superficial fix introduces severe technical debt and fragility (-25 IT Stability) and schedules a latent breach risk.',
+        'The backend team deployed a quick hotfix for $5,000 in overtime. However, skipping root-cause testing left the codebase fragile and destabilized core systems, leaving latent flaws that could resurface under stress.',
     },
     scheduledDelayedEffect: {
       effectId: 'DE_HOTFIX_LEAK',
@@ -93,25 +93,25 @@ export const CHOICES_TURN_1: readonly ScenarioChoice[] = [
       hrDelta: 0,
       itDelta: -10,
       narrativeDescription:
-        'The unverified Turn 1 hotfix suffered an unpatched regression during enterprise customer due diligence, leaking sensitive telemetry data and incurring mandatory audit fees.',
+        'The unverified Turn 1 hotfix failed during an enterprise customer security review, leaking telemetry data and triggering $15,000 in mandatory compliance audit penalties.',
     },
     learningFeedback: {
-      corePrinciple: 'Compounding Liabilities of Technical Debt',
+      corePrinciple: 'The Compounding Cost of Technical Debt',
       tradeoffSummary:
-        'Cutting corners on critical infrastructure saves nominal capital today but creates latent delayed failure modes that reappear with greater destructive force.',
+        'Rushing an unverified fix saves money today, but unaddressed structural flaws tend to resurface later with greater operational and financial fallout.',
       risksCreated: [
-        'Schedules a delayed breach liability (DE_HOTFIX_LEAK) for Turn 3 (-$15,000 Cash, -10 IT).',
-        'Leaves engineers demoralized and resentful of maintaining brittle, unaddressed tech debt.',
+        'Schedules a delayed breach liability (DE_HOTFIX_LEAK) in Turn 3 (-$15,000 cash, -10 IT stability).',
+        'Leaves engineers worried about maintaining brittle, unverified infrastructure.',
       ],
     },
   },
   {
     id: 'CHOICE_1C',
-    label: 'Mandatory All-Hands Emergency Crunch Weekend',
+    label: 'Order a Mandatory 72-Hour Weekend Crunch to Rebuild the Service',
     description:
-      'Mandate an uncompensated 72-hour weekend crunch sprint for the entire engineering department to rewrite the compromised data pipeline from scratch.',
+      'Mandate that the entire engineering team work through the weekend on an intensive 72-hour sprint to completely rewrite the compromised authentication and database layer from scratch without external contractors.',
     executiveRationale:
-      'Eliminates external consultant costs entirely by absorbing the crisis through internal workforce exertion.',
+      'Avoid outside consulting fees entirely by relying on existing salaried staff to solve the crisis.',
     baseImpact: {
       cashDelta: 0, // $0
       grossBurnRateDelta: 0,
@@ -119,15 +119,15 @@ export const CHOICES_TURN_1: readonly ScenarioChoice[] = [
       hrDelta: -30,
       itDelta: 15,
       operationalExplanation:
-        'Rebuilds the pipeline without spending capital, but the extreme 72-hour crunch severely damages morale (-30 HR Morale) and induces deep organizational resentment.',
+        'The engineering team rebuilt the authentication service without spending cash reserves. However, the grueling 72-hour weekend sprint exhausted the developers, creating severe morale damage and deep resentment toward executive management.',
     },
     learningFeedback: {
       corePrinciple: 'Human Capital Depletion',
       tradeoffSummary:
-        'Treating internal staff as a zero-cost buffer causes acute burnout and retention flight risks, amplifying future operational friction.',
+        'Treating internal staff as a zero-cost shock absorber protects the balance sheet in the short term, but damages employee retention and makes future operational challenges far more costly.',
       risksCreated: [
-        'Triggers severe burnout (-30 HR Morale), pushing HR near critical deficit.',
-        'Activates punitive cross-departmental modifiers in Turn 2 (crunch premium on raises, walkouts on perks).',
+        'Severe developer burnout drops team morale close to critical failure thresholds.',
+        'Triggers punitive compensation demands in Turn 2 (crunch premium on raises, walkout risk on superficial perks).',
       ],
     },
   },
@@ -137,11 +137,11 @@ export const CHOICES_TURN_1: readonly ScenarioChoice[] = [
 export const CHOICES_TURN_2: readonly ScenarioChoice[] = [
   {
     id: 'CHOICE_2A',
-    label: 'Market-Rate Salary Calibration & Retention Grants',
+    label: 'Company-Wide Engineering Salary Increase & Retention Bonuses',
     description:
-      'Execute an immediate compensation adjustment bringing engineering compensation to the 75th percentile of market parity, accompanied by structured retention bonuses.',
+      'Bring technical salaries up to the 75th percentile of market rates across the entire engineering department immediately, backed by guaranteed retention bonus agreements.',
     executiveRationale:
-      'Aggressively locks in mission-critical talent by eliminating market compensation discrepancies.',
+      'Decisively stop key developers from leaving by matching competitive market compensation.',
     baseImpact: {
       cashDelta: -3_500_000, // -$35,000
       grossBurnRateDelta: 600_000, // +$6,000 / month
@@ -149,24 +149,24 @@ export const CHOICES_TURN_2: readonly ScenarioChoice[] = [
       hrDelta: 20,
       itDelta: 5,
       operationalExplanation:
-        'Disburses $35,000 in immediate retention grants and increases monthly burn by $6,000. Resolves employee anxiety and cements key talent (+20 HR Morale, +5 IT Stability).',
+        'Distributed $35,000 in retention bonuses and raised monthly payroll burn by $6,000. Key engineers declined competitor offers, restoring stability and team morale across technical departments.',
     },
     learningFeedback: {
       corePrinciple: 'Structural Overhead Expansion',
       tradeoffSummary:
-        'Raising baseline payroll decisively secures talent but structurally shortens financial runway, permanently escalating monthly overhead.',
+        'Permanent payroll increases effectively secure talent, but they permanently increase ongoing monthly burn and shorten your financial runway.',
       risksCreated: [
-        'Elevates gross monthly burn to $26,000/mo, leaving minimal financial margin for error.',
+        'Permanently raises monthly operating burn to $26,000/mo, leaving little room for error if revenue dips.',
       ],
     },
   },
   {
     id: 'CHOICE_2B',
-    label: 'Token Perks & Executive Pep Talk ("Pizza Party")',
+    label: 'Provide Catered Team Lunches, Upgraded Swag & Executive Pep Talk',
     description:
-      'Host catered team lunches, distribute company swag, grant prestigious title bumps, and deliver an inspiring all-hands address on mission alignment.',
+      'Host catered team lunches, distribute premium company apparel, offer senior title promotions, and hold an executive all-hands meeting focusing on company mission and future equity value.',
     executiveRationale:
-      'Attempts to rebuild morale with symbolic non-monetary perks while strictly conserving liquid capital.',
+      'Rebuild morale using low-cost team perks and executive encouragement while strictly conserving cash.',
     baseImpact: {
       cashDelta: -150_000, // -$1,500
       grossBurnRateDelta: 0,
@@ -174,25 +174,25 @@ export const CHOICES_TURN_2: readonly ScenarioChoice[] = [
       hrDelta: -35,
       itDelta: 0,
       operationalExplanation:
-        'Conserves liquid cash ($1,500 cost), but staff perceive superficial perks as insulting during a workload crisis (-35 HR Morale), accelerating quiet quitting.',
+        'Spent $1,500 on team lunches and merchandise. However, during an acute workload and retention crisis, staff viewed superficial perks as dismissive of their real compensation concerns, accelerating departures and disengagement.',
     },
     learningFeedback: {
-      corePrinciple: 'The Fallacy of Symbolic Placation',
+      corePrinciple: 'The Fallacy of Superficial Perks',
       tradeoffSummary:
-        'Superficial gestures during substantive operational distress erode executive credibility and provoke severe disengagement.',
+        'Providing token perks when staff are facing substantive compensation and workload pressures often backfires, damaging leadership credibility and accelerating turnover.',
       risksCreated: [
-        'Precipitates acute HR morale collapse, dropping the department into critical deficit (<35).',
-        'Severely degrades cross-functional collaboration in Turn 3.',
+        'Triggers a sharp decline in team morale, pushing Human Resources into critical deficit.',
+        'Weakens cross-departmental coordination heading into Turn 3.',
       ],
     },
   },
   {
     id: 'CHOICE_2C',
-    label: 'Targeted Retention Package & Career Pathways',
+    label: 'Targeted Retention Packages for Indispensable Technical Leads',
     description:
-      'Disburse targeted retention refreshers and defined career advancement tracks strictly to the top 15% most critical technical architects and team leads.',
+      'Discreetly offer tailored retention bonuses and clear promotion paths exclusively to the top 15% most critical system architects and engineering leads, keeping general payroll unchanged.',
     executiveRationale:
-      'Balances fiscal responsibility with surgical retention defense for mission-critical core positions.',
+      'Protect indispensable technical anchors while exercising fiscal discipline with general company funds.',
     baseImpact: {
       cashDelta: -1_500_000, // -$15,000
       grossBurnRateDelta: 100_000, // +$1,000 / month
@@ -200,14 +200,14 @@ export const CHOICES_TURN_2: readonly ScenarioChoice[] = [
       hrDelta: 5,
       itDelta: 5,
       operationalExplanation:
-        'Surgically protects indispensable technical leads with $15,000 upfront and a sustainable $1,000/mo burn increase (+5 HR Morale, +5 IT Stability).',
+        'Secured agreements with your top technical architects using $15,000 in targeted grants and a sustainable $1,000/mo burn adjustment, maintaining stability while conserving runway.',
     },
     learningFeedback: {
-      corePrinciple: 'Pragmatic Resource Prioritization',
+      corePrinciple: 'Targeted Resource Allocation',
       tradeoffSummary:
-        'Targeted investments safeguard key technical anchors while maintaining capital discipline and runway longevity.',
+        'Focused retention packages protect critical institutional knowledge at a manageable cost, balancing runway longevity with core technical capacity.',
       risksCreated: [
-        'Requires nuanced internal diplomacy to avoid perceived disparity among non-targeted personnel.',
+        'Requires careful internal discretion to prevent perceptions of favoritism among engineers who did not receive packages.',
       ],
     },
   },
@@ -217,11 +217,11 @@ export const CHOICES_TURN_2: readonly ScenarioChoice[] = [
 export const CHOICES_TURN_3: readonly ScenarioChoice[] = [
   {
     id: 'CHOICE_3A',
-    label: 'Aggressive Corporate Austerity & Tooling Freeze',
+    label: 'Enact Strict Company-Wide Spending Freeze & Austerity Controls',
     description:
-      'Enact strict cost controls: cancel auxiliary software licenses, freeze all travel and discretionary budgets, terminate staging servers, and halt open requisitions.',
+      'Freeze all hiring requisitions, eliminate travel and discretionary budgets, downgrade non-critical cloud testing environments, and cancel auxiliary developer software licenses.',
     executiveRationale:
-      'Maximizes runway longevity by cutting operating burn immediately without incurring external debt.',
+      'Extend operating runway by cutting overhead expenses immediately without taking on external debt.',
     baseImpact: {
       cashDelta: 0, // $0
       grossBurnRateDelta: -600_000, // -$6,000 / month
@@ -229,24 +229,24 @@ export const CHOICES_TURN_3: readonly ScenarioChoice[] = [
       hrDelta: -20,
       itDelta: -5,
       operationalExplanation:
-        'Slashing operating overhead reduces gross monthly burn by $6,000/mo. However, the loss of essential tooling frustrates staff (-20 HR Morale, -5 IT Stability).',
+        'Operating burn was reduced by $6,000/mo. However, the loss of development tooling and travel budgets caused frustration among remaining engineers, reducing productivity and team morale.',
     },
     learningFeedback: {
-      corePrinciple: 'Diminishing Returns of Blunt Austerity',
+      corePrinciple: 'The Organizational Limits of Austerity',
       tradeoffSummary:
-        'Aggressive cost reductions extend runway on paper but can cripple operational velocity and trigger attrition if organizational reserves are already low.',
+        'Aggressive cost-cutting extends cash runway on paper, but removing essential operational tools can cripple productivity and trigger resignations if team morale is already fragile.',
       risksCreated: [
-        'Further depresses staff morale; if already fragile (<45), triggers an acute organizational death spiral.',
+        'Depresses staff morale; if already below 45, it triggers an additional HR morale penalty (-30 total).',
       ],
     },
   },
   {
     id: 'CHOICE_3B',
-    label: 'Venture Debt Facility ($75k Inflow)',
+    label: 'Draw Down a $75,000 Venture Debt Credit Facility',
     description:
-      'Draw down a $75,000 venture credit facility at 8.0% APR with contractual $3,500/month principal amortization to inject non-dilutive liquidity.',
+      'Draw $75,000 from an available venture lending facility at 8.0% annual interest with contractual $3,500/month principal repayments to bolster liquid cash reserves.',
     executiveRationale:
-      'Injects substantial liquid runway immediately, avoiding operational cutbacks or workforce friction.',
+      'Inject immediate liquid cash into the company without diluting equity or enforcing disruptive cost reductions.',
     baseImpact: {
       cashDelta: 7_500_000, // +$75,000
       grossBurnRateDelta: 0,
@@ -254,24 +254,24 @@ export const CHOICES_TURN_3: readonly ScenarioChoice[] = [
       hrDelta: 0,
       itDelta: 0,
       operationalExplanation:
-        'Secures $75,000 in cash and establishes a $75,000 debt balance. Enters service immediately: $4,000 debt service ($500 interest + $3,500 principal) is deducted in current-turn settlement.',
+        'Deposited $75,000 in cash while creating a $75,000 debt obligation. Debt service took effect immediately, with $4,000 ($3,500 principal + $500 interest) deducted during monthly settlement.',
     },
     learningFeedback: {
-      corePrinciple: 'The Leverage Trap in Early-Stage Operating Models',
+      corePrinciple: 'The Debt Leverage Trade-Off',
       tradeoffSummary:
-        'Debt financing increases top-line cash reserves, but mandatory amortization and interest payments inflate ongoing net burn and trigger severe financial leverage penalties.',
+        'Debt financing boosts top-line cash reserves immediately, but mandatory monthly principal and interest payments increase net cash burn and heavily penalize long-term financial health.',
       risksCreated: [
-        'Incurs an ongoing debt service burden ($3,976.67/mo next cycle) and a permanent debt leverage penalty, capping financial health at 39.',
+        'Creates an ongoing debt service obligation ($3,976.67/mo next cycle) and a permanent debt leverage penalty on your financial rating.',
       ],
     },
   },
   {
     id: 'CHOICE_3C',
-    label: 'Collaborative Cloud Optimization & Architecture Audit',
+    label: 'Conduct Cross-Functional Cloud Optimization & Architecture Audit',
     description:
-      'Engage cross-functional engineering and finance teams to execute a comprehensive cloud architecture audit, retiring zombie instances and optimizing resource allocation.',
+      'Partner technical leads with finance to audit cloud infrastructure, eliminate idle database instances, optimize server compute allocation, and renegotiate provider contracts.',
     executiveRationale:
-      'Targets structural cost efficiencies through cross-departmental technical collaboration rather than arbitrary cuts.',
+      'Achieve sustainable structural savings through collaborative engineering efficiency rather than arbitrary budget cuts.',
     baseImpact: {
       cashDelta: -1_000_000, // -$10,000
       grossBurnRateDelta: -200_000, // -$2,000 / month base
@@ -279,15 +279,15 @@ export const CHOICES_TURN_3: readonly ScenarioChoice[] = [
       hrDelta: 0,
       itDelta: -5,
       operationalExplanation:
-        'Invests $10,000 in tooling and audit overhead, cutting baseline cloud burn by $2,000/mo. If engineering morale is high (>70), cross-functional engagement cuts burn by $5,000/mo.',
+        'Invested $10,000 in profiling tools and migration assistance, cutting ongoing cloud hosting expenses by $2,000/mo. If HR morale is high (>70), cross-functional engagement cuts burn by $5,000/mo.',
     },
     learningFeedback: {
-      corePrinciple: 'Cross-Functional Structural Efficiency',
+      corePrinciple: 'Collaborative Operational Efficiency',
       tradeoffSummary:
-        'Collaborative structural optimizations yield sustainable operational savings without damaging culture, but strictly require an engaged workforce to execute.',
+        'Structured infrastructure optimizations deliver lasting reductions in operational expenses without hurting company culture, but require motivated, cooperative engineers to execute.',
       risksCreated: [
-        'Requires an upfront $10,000 capital expenditure.',
-        'Completely unviable (locked) if engineering morale has collapsed (<45).',
+        'Requires an upfront $10,000 cash outlay.',
+        'Cannot be executed (locked) if HR morale has broken down (<45).',
       ],
     },
   },
@@ -299,7 +299,6 @@ export const CHOICES_TURN_3: readonly ScenarioChoice[] = [
 
 export const DEMO_MODIFIERS: readonly ChoiceModifier[] = [
   // 1. Hotfix tech debt penalty on token perks
-  // If Turn 1 hotfix was chosen, selecting token perks causes additional IT destabilization (-15 IT)
   {
     modifierId: 'MOD_HOTFIX_TOKEN_PERKS',
     targetChoiceId: 'CHOICE_2B',
@@ -314,7 +313,6 @@ export const DEMO_MODIFIERS: readonly ChoiceModifier[] = [
   },
 
   // 2. Crunch backfire on token perks
-  // If Turn 1 crunch was chosen, offering a pizza party provokes outrage (-45 HR, -20 IT)
   {
     modifierId: 'MOD_CRUNCH_TOKEN_PERKS',
     targetChoiceId: 'CHOICE_2B',
@@ -330,8 +328,6 @@ export const DEMO_MODIFIERS: readonly ChoiceModifier[] = [
   },
 
   // 3. Crunch premium on market raises
-  // If Turn 1 crunch was chosen, employees demand an additional $45,000 trust premium,
-  // bringing total immediate cost to $80,000 ($35,000 base + $45,000 penalty = -$80,000 cash).
   {
     modifierId: 'MOD_CRUNCH_MARKET_RAISES',
     targetChoiceId: 'CHOICE_2A',
@@ -346,7 +342,6 @@ export const DEMO_MODIFIERS: readonly ChoiceModifier[] = [
   },
 
   // 4. Austerity death spiral in Finance
-  // If HR morale is below 45 at Turn 3, austerity triggers a mass walkout (-30 HR)
   {
     modifierId: 'MOD_AUSTERITY_DEATH_SPIRAL',
     targetChoiceId: 'CHOICE_3A',
@@ -361,7 +356,6 @@ export const DEMO_MODIFIERS: readonly ChoiceModifier[] = [
   },
 
   // 5. Collaborative Cloud Optimization locked if morale collapsed
-  // If HR morale is below 45 at Turn 3, engineers refuse voluntary participation
   {
     modifierId: 'MOD_COLLAB_CLOUD_LOCKED',
     targetChoiceId: 'CHOICE_3C',
@@ -378,7 +372,6 @@ export const DEMO_MODIFIERS: readonly ChoiceModifier[] = [
   },
 
   // 6. Collaborative Cloud Optimization maximum savings if morale is high
-  // If HR morale is above 70 at Turn 3, collaborative engagement maximizes burn reduction to -$5,000/mo
   {
     modifierId: 'MOD_COLLAB_CLOUD_SAVINGS',
     targetChoiceId: 'CHOICE_3C',
@@ -403,18 +396,18 @@ export const DEMO_INCIDENTS: readonly Incident[] = [
     id: 'INC_IT_1',
     turn: 1,
     department: 'IT',
-    title: 'Production Database Vulnerability',
+    title: 'Critical Database Exploit Detected',
     urgency: 'critical',
     basePremise:
-      'Security operations flags an active remote code execution vulnerability in the core customer database cluster. Threat actors are probing the vulnerability.',
+      'At 02:15 AM, automated monitoring detected unauthorized SQL command injection against our primary production customer database cluster. Lead infrastructure engineer Marcus traced the vulnerability to an unauthenticated API endpoint pushed during last week\'s sprint.',
     businessContext:
-      'The company holds $250,000 in cash reserves with a $20,000/mo burn rate. Leadership must resolve the zero-day exploit before proprietary enterprise data is compromised.',
+      'The database stores sensitive account information, payment tokens, and configuration data for 42 enterprise clients. Attackers are currently probing the endpoint. Management must choose how to secure the system before client data is exposed.',
     narrativeVariants: [
       {
         variantId: 'VAR_IT_DEFAULT',
         conditions: [],
         leadInText:
-          'Security monitoring triggers high-severity alerts at 02:00. The infrastructure lead recommends an immediate response strategy before external parties exploit the zero-day.',
+          'Sarah Chen, Head of Infrastructure, requests an immediate decision from the CEO before the vulnerability is exploited by external threat actors.',
       },
     ],
     choices: CHOICES_TURN_1,
@@ -425,12 +418,12 @@ export const DEMO_INCIDENTS: readonly Incident[] = [
     id: 'INC_HR_1',
     turn: 2,
     department: 'HR',
-    title: 'Key Talent Retention Crisis',
+    title: 'Senior Engineering Retention Crisis',
     urgency: 'urgent',
     basePremise:
-      'Competing tech firms have initiated an aggressive recruitment drive targeting your senior infrastructure and full-stack developers.',
+      'Elena Rostova, VP of People, reports that three of our senior engineering architects have received formal job offers from competitors offering 25–30% salary increases. Two additional mid-level developers have requested compensation reviews this morning.',
     businessContext:
-      'Following the operational stress of Turn 1, several key engineers are holding external offers. The Head of People warns that departure of key talent will derail the product roadmap.',
+      'Competitors have given our engineers two weeks to accept. Losing these team leads would halt product development for months, but blanket compensation increases will permanently raise our monthly payroll expenses.',
     narrativeVariants: [
       {
         variantId: 'VAR_HR_AFTER_CRUNCH',
@@ -442,7 +435,7 @@ export const DEMO_INCIDENTS: readonly Incident[] = [
           },
         ],
         leadInText:
-          'The engineering department is in open revolt following the uncompensated 72-hour crunch weekend. Multiple tech leads have placed competing offers on the VP of People\'s desk, demanding immediate answers.',
+          'Engineering team morale is at a breaking point after last weekend\'s mandatory 72-hour crunch. Developers feel exhausted and undervalued, and external recruiters are taking full advantage of the frustration.',
       },
       {
         variantId: 'VAR_HR_AFTER_HOTFIX',
@@ -454,7 +447,7 @@ export const DEMO_INCIDENTS: readonly Incident[] = [
           },
         ],
         leadInText:
-          'Frustrations are mounting across the technical team. Developers complain that management prioritizes short-term duct tape over foundational quality, leaving them to field constant operational fires.',
+          'Developers are visibly frustrated by having to support an unverified emergency patch. Key engineers complain that management favors short-term duct tape over solid engineering, making competing offers much more attractive.',
       },
       {
         variantId: 'VAR_HR_AFTER_FORENSIC',
@@ -466,7 +459,7 @@ export const DEMO_INCIDENTS: readonly Incident[] = [
           },
         ],
         leadInText:
-          'Following the disciplined forensic audit in Turn 1, engineers respect leadership\'s commitment to quality. However, broader market compensation pressures have prompted recruiters to target your team.',
+          'Following the external forensic audit, the technical team respects leadership\'s commitment to code quality. However, wider market salary increases have made our senior leads prime targets for headhunters.',
       },
     ],
     choices: CHOICES_TURN_2,
@@ -477,12 +470,12 @@ export const DEMO_INCIDENTS: readonly Incident[] = [
     id: 'INC_FIN_1',
     turn: 3,
     department: 'FINANCE',
-    title: 'Q4 Cloud Optimization & Runway Squeeze',
+    title: 'Year-End Capital Strategy & Runway Management',
     urgency: 'critical',
     basePremise:
-      'Executive leadership convenes for the end-of-year financial review. Operating commitments, infrastructure overhead, and upcoming debt or cash obligations require executive determination.',
+      'David Vance, Chief Financial Officer, presents the year-end financial review. We must establish our capital strategy for the coming fiscal year to ensure sufficient operating runway for company survival.',
     businessContext:
-      'The company must guarantee sufficient operating runway into the new fiscal year through debt financing, structural optimization, or aggressive corporate austerity.',
+      'Management must decide whether to secure debt financing, enforce strict spending cuts, or execute an engineering-led cloud optimization audit to balance our books.',
     narrativeVariants: [
       {
         variantId: 'VAR_FIN_LOW_MORALE',
@@ -494,7 +487,7 @@ export const DEMO_INCIDENTS: readonly Incident[] = [
           },
         ],
         leadInText:
-          'With employee engagement critically fractured and key departures destabilizing the floor, finance must balance the books without counting on voluntary cross-functional initiatives.',
+          'With engineering morale critically low and team frustration spreading, finance must balance company accounts without relying on voluntary cross-department cooperation.',
       },
       {
         variantId: 'VAR_FIN_HIGH_MORALE',
@@ -506,13 +499,13 @@ export const DEMO_INCIDENTS: readonly Incident[] = [
           },
         ],
         leadInText:
-          'Backed by an energized workforce and robust technical foundations, executive leadership has the operational credibility to undertake sophisticated structural efficiencies.',
+          'Supported by a dedicated engineering team with high morale, management has the organizational credibility to pursue collaborative technical efficiencies.',
       },
       {
         variantId: 'VAR_FIN_DEFAULT',
         conditions: [],
         leadInText:
-          'Approaching the final financial review of the year, leadership must calibrate liquid cash, debt obligations, and structural monthly burn to ensure enterprise continuity.',
+          'Approaching the final financial review of the year, leadership must calibrate liquid cash, debt obligations, and monthly operating expenses to guarantee ongoing operations.',
       },
     ],
     choices: CHOICES_TURN_3,
