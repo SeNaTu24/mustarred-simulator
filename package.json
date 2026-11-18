@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node --test tests/calculations.test.ts tests/company-simulation.test.ts tests/decision-matcher.test.ts tests/ui-directive-input.test.ts tests/communications-audit.test.ts tests/clipboard-shortcuts.test.ts tests/phishing-incident.test.ts tests/incident-interaction.test.ts tests/mobile-responsiveness.test.ts tests/mobile-controls.test.ts"
+    "test": "node --test tests/calculations.test.ts tests/company-simulation.test.ts tests/decision-matcher.test.ts tests/ui-directive-input.test.ts tests/communications-audit.test.ts tests/clipboard-shortcuts.test.ts tests/phishing-incident.test.ts tests/incident-interaction.test.ts tests/interactive-phishing.test.ts tests/phishing-dialogue.test.ts tests/mobile-responsiveness.test.ts tests/mobile-controls.test.ts tests/tunde-movement.test.ts"
   },
   "devDependencies": {
     "typescript": "~7.0.2",

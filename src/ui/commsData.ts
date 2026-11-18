@@ -15,33 +15,33 @@ export interface DepartmentHead {
 
 export const DEPARTMENT_HEADS: Record<'IT' | 'HR' | 'FINANCE' | 'LEGAL', DepartmentHead> = {
   IT: {
-    id: 'sarah-chen',
-    name: 'Sarah Chen',
-    role: 'VP of Engineering',
+    id: 'tunde-bello',
+    name: 'Tunde Bello',
+    role: 'Head of IT',
     department: 'IT',
     avatarColor: '#0284c7',
     officeDesk: { x: 440, y: 210 },
   },
   HR: {
-    id: 'elena-rostova',
-    name: 'Elena Rostova',
-    role: 'Head of Human Resources',
+    id: 'ngozi-okafor',
+    name: 'Ngozi Okafor',
+    role: 'Head of People',
     department: 'HR',
     avatarColor: '#10b981',
     officeDesk: { x: 1380, y: 290 },
   },
   FINANCE: {
-    id: 'david-vance',
-    name: 'David Vance',
-    role: 'Interim Chief Financial Officer',
+    id: 'chinedu-eze',
+    name: 'Chinedu Eze',
+    role: 'Finance Manager',
     department: 'FINANCE',
     avatarColor: '#f59e0b',
     officeDesk: { x: 800, y: 800 },
   },
   LEGAL: {
-    id: 'rachel-sterling',
-    name: 'Rachel Sterling',
-    role: 'General Counsel & Compliance Lead',
+    id: 'funmi-adeyemi',
+    name: 'Funmi Adeyemi',
+    role: 'Company Secretary',
     department: 'LEGAL',
     avatarColor: '#8b5cf6',
     officeDesk: { x: 1360, y: 920 },
@@ -332,7 +332,7 @@ export const INCIDENT_DIALOGUES: Record<number | string, IncidentDialogue> = {
       'Priya Mehta (Data Pipeline Lead) submitted a written resignation at 08:44 AM with a competing remote-first offer in hand.',
       'Both engineers have critical system ownership with no documented handover plans.',
       'The engineering Slack channel has 47 unread messages since 8 AM — sentiment is overwhelmingly negative.',
-      'Three other engineers have requested 1:1s with Sarah today.',
+      'Three other engineers have requested 1:1s with Tunde today.',
     ],
     uncertainties: [
       'Whether the three engineers requesting 1:1s are also considering leaving.',
@@ -349,7 +349,7 @@ export const INCIDENT_DIALOGUES: Record<number | string, IncidentDialogue> = {
     probingQuestions: [
       {
         id: 'q-rto-james',
-        question: 'Sarah, is James actually going to leave or is this a negotiating tactic?',
+        question: 'Tunde, is James actually going to leave or is this a negotiating tactic?',
         answer:
           'James has a signed offer letter from a fully remote fintech. He showed it to me. This is not a bluff. He has been commuting 90 minutes each way and the RTO announcement was the final straw. Priya is in the same position — she has two kids in school and the commute is not workable for her schedule.',
         category: 'PERSONNEL',
@@ -381,7 +381,7 @@ export const INCIDENT_DIALOGUES: Record<number | string, IncidentDialogue> = {
         },
         {
           id: 'cb_rto_1on1',
-          label: 'Have Sarah personally call James and Priya before the all-hands',
+          label: 'Have Tunde personally call James and Priya before the all-hands',
           description: 'Direct outreach before a public announcement prevents further escalation.',
           defaultChecked: true,
         },
@@ -427,7 +427,7 @@ export const INCIDENT_DIALOGUES: Record<number | string, IncidentDialogue> = {
     probingQuestions: [
       {
         id: 'q-cont-legal',
-        question: 'Elena, what is our actual legal exposure if we terminate immediately without full notice?',
+        question: 'Ngozi, what is our actual legal exposure if we terminate immediately without full notice?',
         answer:
           'Contractor B has already mentioned to a colleague that they know an employment solicitor. If we exit without the contractual notice period, they have a straightforward breach of contract claim. Legal fees alone would run $8,000-$15,000 even if we win. Paying the 4-week notice is cheaper than defending the claim.',
         category: 'RISK',
@@ -459,7 +459,7 @@ export const INCIDENT_DIALOGUES: Record<number | string, IncidentDialogue> = {
         },
         {
           id: 'cb_cont_legal',
-          label: 'Have Rachel Sterling review all termination letters before they are sent',
+          label: 'Have Funmi Adeyemi review all termination letters before they are sent',
           description: 'Legal review prevents contractual errors that create liability.',
           defaultChecked: true,
         },
@@ -505,7 +505,7 @@ export const INCIDENT_DIALOGUES: Record<number | string, IncidentDialogue> = {
     probingQuestions: [
       {
         id: 'q-fin-etf',
-        question: 'David, is there any way to negotiate the ETF down with the vendor?',
+        question: 'Chinedu, is there any way to negotiate the ETF down with the vendor?',
         answer:
           'I called their account manager this morning. They are willing to reduce the ETF to $25,000 if we commit to a 12-month contract with the new provider they partner with. That is still a worse deal than waiting for the natural renewal. I would not recommend it.',
         category: 'FINANCIAL',
@@ -514,14 +514,15 @@ export const INCIDENT_DIALOGUES: Record<number | string, IncidentDialogue> = {
         id: 'q-fin-audit',
         question: 'How confident are you in the waste audit finding real savings?',
         answer:
-          'Based on our last infrastructure review 18 months ago, we had about 22% idle compute. Cloud usage has grown since then and we have never cleaned it up. I am confident the audit finds at least $2,000/mo. If the engineering team is engaged, $4,000-$5,000/mo is realistic. The $5,000 tooling cost pays back in 5 weeks.',
+          'Based on our last infrastructure review 18 months ago, we had about 22% idle compute. Cloud usage has grown since then and we have never cleaned it up. I am confident the audit finds at least ₦2,000/mo equivalent. If the team is engaged, ₦4,000–₦5,000/mo is realistic. The tooling cost pays back in five weeks.',
+        // Note: currency phrasing kept generic; original USD figures are simulation engine values
         category: 'TECHNICAL',
       },
       {
         id: 'q-fin-ceo',
-        question: 'How do I explain to the CEO that we cannot cut the cloud contract this quarter?',
+        question: 'How do I explain to the MD that we cannot cut the cloud contract this quarter?',
         answer:
-          'Frame it as contract literacy protecting the company from a $40,000 mistake. Present the audit as the alternative — it delivers real savings this quarter without the penalty. The board will respect a CFO who reads the contract before cutting it.',
+          'Frame it as contract literacy protecting the company from a costly mistake. Present the audit as the alternative — it delivers real savings this quarter without the penalty. The MD will respect a Finance Manager who reads the contract before cutting it.',
         category: 'RISK',
       },
     ],
@@ -588,8 +589,8 @@ export function buildCrossDeptReaction(
       const cashText = state ? ` Cash reserves stand at ${formatCents(state.financials.cash)}.` : '';
       return {
         choiceId,
-        senderName: 'David Vance',
-        senderTitle: 'Interim CFO',
+        senderName: 'Chinedu Eze',
+        senderTitle: 'Finance Manager',
         senderDept: 'FINANCE',
         subject: 'Treasury Note: $30,000 Specialist Retainer Disbursed',
         timestamp: 'Turn 1 · 11:30 AM',
@@ -600,8 +601,8 @@ export function buildCrossDeptReaction(
     case 'CHOICE_1B': {
       return {
         choiceId,
-        senderName: 'Marcus Vance',
-        senderTitle: 'Lead Infrastructure Engineer',
+        senderName: 'Tunde Bello',
+        senderTitle: 'Head of IT',
         senderDept: 'IT',
         subject: 'Internal Memo: In-House Patch Deployed — Latent Technical Debt',
         timestamp: 'Turn 1 · 10:45 AM',
@@ -613,8 +614,8 @@ export function buildCrossDeptReaction(
     case 'CHOICE_1C': {
       return {
         choiceId,
-        senderName: 'Elena Rostova',
-        senderTitle: 'Head of Human Resources',
+        senderName: 'Ngozi Okafor',
+        senderTitle: 'Head of People',
         senderDept: 'HR',
         subject: 'Urgent: Engineering Team Burnout Following 72-Hour Weekend Crunch',
         timestamp: 'Turn 1 · 06:15 PM',
@@ -630,12 +631,12 @@ export function buildCrossDeptReaction(
       const cashText = state ? ` Cash reserves stand at ${formatCents(state.financials.cash)}.` : '';
       return {
         choiceId,
-        senderName: 'David Vance',
-        senderTitle: 'Interim CFO',
+        senderName: 'Chinedu Eze',
+        senderTitle: 'Finance Manager',
         senderDept: 'FINANCE',
         subject: 'Treasury Alert: Fixed Payroll Burn Increased',
         timestamp: 'Turn 2 · 02:45 PM',
-        message: `Elena's market salary adjustments have halted senior developer departures (+20 HR), but ongoing payroll obligations have increased. Monthly gross burn is now ${burnFormatted}, and upfront bonuses required ${costFormatted}.${cashText} We will need disciplined revenue execution to sustain this overhead.`,
+        message: `Ngozi's market salary adjustments have halted senior developer departures (+20 HR), but ongoing payroll obligations have increased. Monthly gross burn is now ${burnFormatted}, and upfront bonuses required ${costFormatted}.${cashText} We will need disciplined revenue execution to sustain this overhead.`,
         tone: 'warning',
       };
     }
@@ -643,8 +644,8 @@ export function buildCrossDeptReaction(
       const hrDrop = record ? Math.abs(record.immediateMetricDeltas.hrDelta) : 35;
       return {
         choiceId,
-        senderName: 'Sarah Chen',
-        senderTitle: 'VP of Engineering',
+        senderName: 'Tunde Bello',
+        senderTitle: 'Head of IT',
         senderDept: 'IT',
         subject: 'Staff Feedback: Token Perks Poorly Received by Developers',
         timestamp: 'Turn 2 · 04:30 PM',
@@ -655,8 +656,8 @@ export function buildCrossDeptReaction(
     case 'CHOICE_2C': {
       return {
         choiceId,
-        senderName: 'Elena Rostova',
-        senderTitle: 'Head of Human Resources',
+        senderName: 'Ngozi Okafor',
+        senderTitle: 'Head of People',
         senderDept: 'HR',
         subject: 'Targeted Retention Agreements Secured for Core Technical Leads',
         timestamp: 'Turn 2 · 03:15 PM',
@@ -670,8 +671,8 @@ export function buildCrossDeptReaction(
       const itDelta = record ? record.immediateMetricDeltas.itDelta : -5;
       return {
         choiceId,
-        senderName: 'Sarah Chen',
-        senderTitle: 'VP of Engineering',
+        senderName: 'Tunde Bello',
+        senderTitle: 'Head of IT',
         senderDept: 'IT',
         subject: 'Operations Report: Austerity Controls Enacted Across Engineering',
         timestamp: 'Turn 3 · 04:15 PM',
@@ -685,8 +686,8 @@ export function buildCrossDeptReaction(
         : '';
       return {
         choiceId,
-        senderName: 'David Vance',
-        senderTitle: 'Interim CFO',
+        senderName: 'Chinedu Eze',
+        senderTitle: 'Finance Manager',
         senderDept: 'FINANCE',
         subject: 'Treasury Report: $75,000 Venture Debt Facility Drawn',
         timestamp: 'Turn 3 · 04:45 PM',
@@ -700,8 +701,8 @@ export function buildCrossDeptReaction(
       const itDelta = record ? record.immediateMetricDeltas.itDelta : -5;
       return {
         choiceId,
-        senderName: 'Sarah Chen',
-        senderTitle: 'VP of Engineering',
+        senderName: 'Tunde Bello',
+        senderTitle: 'Head of IT',
         senderDept: 'IT',
         subject: 'Infrastructure Audit: Cloud Optimization Savings Applied',
         timestamp: 'Turn 3 · 05:00 PM',
@@ -714,8 +715,8 @@ export function buildCrossDeptReaction(
     case 'CHOICE_RTO_HYBRID': {
       return {
         choiceId,
-        senderName: 'Elena Rostova',
-        senderTitle: 'Head of Human Resources',
+        senderName: 'Ngozi Okafor',
+        senderTitle: 'Head of People',
         senderDept: 'HR',
         subject: 'Staff Update: Hybrid Policy Announced — Resignations Withdrawn',
         timestamp: 'Monday · 09:52 AM',
@@ -727,8 +728,8 @@ export function buildCrossDeptReaction(
     case 'CHOICE_RTO_HOLD': {
       return {
         choiceId,
-        senderName: 'Sarah Chen',
-        senderTitle: 'VP of Engineering',
+        senderName: 'Tunde Bello',
+        senderTitle: 'Head of IT',
         senderDept: 'IT',
         subject: 'Engineering Update: One Resignation Stands — Handover Required',
         timestamp: 'Monday · 10:05 AM',
@@ -740,8 +741,8 @@ export function buildCrossDeptReaction(
     case 'CHOICE_RTO_REVERSE': {
       return {
         choiceId,
-        senderName: 'David Vance',
-        senderTitle: 'Interim CFO',
+        senderName: 'Chinedu Eze',
+        senderTitle: 'Finance Manager',
         senderDept: 'FINANCE',
         subject: 'Treasury Note: Office Footprint Reduction Saves $1,500/mo',
         timestamp: 'Monday · 10:20 AM',
@@ -755,8 +756,8 @@ export function buildCrossDeptReaction(
     case 'CHOICE_CONT_PROPER': {
       return {
         choiceId,
-        senderName: 'Rachel Sterling',
-        senderTitle: 'General Counsel',
+        senderName: 'Funmi Adeyemi',
+        senderTitle: 'Company Secretary',
         senderDept: 'LEGAL',
         subject: 'Legal Clearance: Contractor Exits Processed Without Exposure',
         timestamp: 'Monday · 02:30 PM',
@@ -768,8 +769,8 @@ export function buildCrossDeptReaction(
     case 'CHOICE_CONT_IMMEDIATE': {
       return {
         choiceId,
-        senderName: 'Rachel Sterling',
-        senderTitle: 'General Counsel',
+        senderName: 'Funmi Adeyemi',
+        senderTitle: 'Company Secretary',
         senderDept: 'LEGAL',
         subject: 'Legal Alert: Contractor B Has Contacted an Employment Solicitor',
         timestamp: 'Monday · 03:15 PM',
@@ -781,8 +782,8 @@ export function buildCrossDeptReaction(
     case 'CHOICE_CONT_SELECTIVE': {
       return {
         choiceId,
-        senderName: 'Sarah Chen',
-        senderTitle: 'VP of Engineering',
+        senderName: 'Tunde Bello',
+        senderTitle: 'Head of IT',
         senderDept: 'IT',
         subject: 'Engineering Update: Gateway Migration Continues — Two Clean Exits',
         timestamp: 'Monday · 02:45 PM',
@@ -796,13 +797,13 @@ export function buildCrossDeptReaction(
     case 'CHOICE_CLOUD_WAIT': {
       return {
         choiceId,
-        senderName: 'David Vance',
-        senderTitle: 'Interim CFO',
+        senderName: 'Chinedu Eze',
+        senderTitle: 'Finance Manager',
         senderDept: 'FINANCE',
         subject: 'Treasury Update: ETF Avoided — Renegotiation Scheduled at Renewal',
         timestamp: 'Monday · 04:00 PM',
         message:
-          'No early termination fee triggered. I have briefed the CEO on the contract clause and framed the renewal renegotiation as the cost-cut strategy for Q3. The vendor has been put on notice that we will be seeking a 25% reduction. Engineering continues without any migration disruption.',
+          'No early termination fee triggered. I have briefed the MD on the contract clause and framed the renewal renegotiation as the cost-cut strategy for Q3. The vendor has been put on notice that we will be seeking a 25% reduction. Engineering continues without any migration disruption.',
         tone: 'info',
       };
     }
@@ -810,8 +811,8 @@ export function buildCrossDeptReaction(
       const itDelta = record ? record.immediateMetricDeltas.itDelta : -15;
       return {
         choiceId,
-        senderName: 'Sarah Chen',
-        senderTitle: 'VP of Engineering',
+        senderName: 'Tunde Bello',
+        senderTitle: 'Head of IT',
         senderDept: 'IT',
         subject: 'Engineering Alert: Unplanned Migration Destabilised Two Services',
         timestamp: 'Monday · 05:30 PM',
@@ -823,8 +824,8 @@ export function buildCrossDeptReaction(
       const burnSaved = record ? Math.abs(record.immediateFinancialDeltas.grossBurnRateDelta) : 300_000;
       return {
         choiceId,
-        senderName: 'David Vance',
-        senderTitle: 'Interim CFO',
+        senderName: 'Chinedu Eze',
+        senderTitle: 'Finance Manager',
         senderDept: 'FINANCE',
         subject: `Cloud Audit Complete: ${formatCents(burnSaved)}/mo in Waste Eliminated`,
         timestamp: 'Monday · 05:00 PM',
@@ -836,12 +837,12 @@ export function buildCrossDeptReaction(
     default:
       return {
         choiceId,
-        senderName: 'Corporate Administration',
-        senderTitle: 'Operations Lead',
+        senderName: 'Mustarred Ltd',
+        senderTitle: 'Operations',
         senderDept: 'IT',
-        subject: 'Executive Decision Recorded',
+        subject: 'Decision Recorded',
         timestamp: 'Turn Aftermath',
-        message: 'The executive decision has been authorized and implementation is underway.',
+        message: 'The decision has been recorded and implementation is underway.',
         tone: 'info',
       };
   }

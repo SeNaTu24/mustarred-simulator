@@ -26,12 +26,17 @@ import type { IncidentInteractionSpec, ResponsePlan } from '../incidents/interac
 import { IncidentWorkbench } from './IncidentWorkbench.ts';
 import { IncidentOutcomeView, type OutcomeViewProps } from './IncidentOutcomeView.ts';
 import { matchPlayerDirective } from './decisionMatcher.ts';
-import {
-  DEPARTMENT_HEADS,
-  INCIDENT_DIALOGUES,
-  type CrossDeptReaction,
-} from './commsData.ts';
+import type { CrossDeptReaction } from './commsData.ts';
+import { COMPANY, PLAYER, staffForDepartment } from './staff.ts';
 import { MobileControls } from './MobileControls.ts';
+import {
+  TUNDE_OPENING_LINE,
+  PHISHING_OPENING_OPTIONS,
+  getOpeningOption,
+  getFollowupExchange,
+  getPhishingOutcomeConversation,
+  type PhishingOpeningOptionId,
+} from './phishingDialogue.ts';
 
 export interface UIManagerCallbacks {
   readonly onSelectChoice: (choiceId: string, additionalInstructions?: string) => void;
@@ -41,6 +46,7 @@ export interface UIManagerCallbacks {
   readonly onRestart: () => void;
   readonly onPromptInteract: () => void;
   readonly onStepAway?: () => void;
+  readonly onTundeIntroCompleted?: () => void;
   readonly onOpenCommsHub?: () => void;
   readonly onVirtualMove?: (dx: number, dy: number) => void;
   readonly onVirtualInteract?: () => void;
@@ -97,6 +103,33 @@ export class UIManager {
 
   public getMobileControls(): MobileControls | undefined {
     return this.mobileControls;
+  }
+
+  private phishingIncidentId?: string;
+  private phishingState: {
+    linkOpened: boolean;
+    credentialsSubmitted: boolean;
+    isSenderInspected: boolean;
+    isLinkInspected?: boolean;
+    selectedAction: 'action_report' | 'action_delete' | 'action_contain';
+    openingResponse?: PhishingOpeningOptionId;
+    dialogueStep?: 'opening' | 'amaka_line' | 'tunde_reply';
+    followupStep?: 'tunde_brief' | 'amaka_reply' | 'tunde_closing';
+    introCompleted?: boolean;
+  } | null = null;
+
+  public getPhishingInteractionState(): {
+    linkOpened: boolean;
+    credentialsSubmitted: boolean;
+    isSenderInspected: boolean;
+    isLinkInspected?: boolean;
+    selectedAction: 'action_report' | 'action_delete' | 'action_contain';
+    openingResponse?: PhishingOpeningOptionId;
+    dialogueStep?: 'opening' | 'amaka_line' | 'tunde_reply';
+    followupStep?: 'tunde_brief' | 'amaka_reply' | 'tunde_closing';
+    introCompleted?: boolean;
+  } | null {
+    return this.phishingState;
   }
 
   constructor(callbacks: UIManagerCallbacks) {
@@ -257,49 +290,18 @@ export class UIManager {
    * Notifies player of a new incident via sliding toast and logs dispatch into Comms Hub.
    */
   public notifyNewIncident(incident: Incident): void {
-    if (incident.id === 'INC_PHISH_1') {
-      const msg: CommsMessage = {
-        id: `incident-phish`,
-        channel: 'urgent',
-        senderName: 'Maya Lin',
-        senderRole: 'IT Security Lead',
-        senderDept: 'IT',
-        timestamp: '09:14 AM · Priority Alert',
-        subject: 'Frankfurt session on Tom Bradley\'s account',
-        body: 'Someone is signed in to Tom\'s account from Frankfurt and opened vendor payments. The session is still live.',
-        tone: 'critical',
-        isIncident: true,
-      };
-      this.messages.unshift(msg);
-      this.unreadCommsCount++;
-      this.updateHUDCommsBadge();
-      this.renderCommsDrawer();
-      this.showToastNotification(
-        'URGENT DISPATCH · IT SECURITY',
-        'Maya Lin',
-        'IT Security Lead',
-        'Session live on Tom\'s account',
-        () => {
-          this.callbacks.onPromptInteract();
-        }
-      );
-      return;
-    }
+    const head = staffForDepartment(incident.department);
 
-    const dialogue = INCIDENT_DIALOGUES[incident.turn];
-    if (!dialogue) return;
-
-    // Log into messages collection
     this.messages.unshift({
-      id: `incident-${incident.turn}`,
+      id: `incident-${incident.id}`,
       channel: 'urgent',
-      senderName: dialogue.head.name,
-      senderRole: dialogue.head.role,
-      senderDept: dialogue.head.department,
-      timestamp: dialogue.timestamp,
-      subject: dialogue.subject,
-      body: dialogue.briefingLead,
-      tone: 'critical',
+      senderName: head.name,
+      senderRole: head.role,
+      senderDept: incident.department,
+      timestamp: `Turn ${incident.turn} · ${COMPANY.city}`,
+      subject: incident.title,
+      body: incident.basePremise,
+      tone: incident.urgency === 'critical' ? 'critical' : 'warning',
       isIncident: true,
     });
 
@@ -307,12 +309,11 @@ export class UIManager {
     this.updateHUDCommsBadge();
     this.renderCommsDrawer();
 
-    // Trigger in-game toast notification
     this.showToastNotification(
-      `URGENT DISPATCH · ${dialogue.head.department}`,
-      dialogue.head.name,
-      dialogue.head.role,
-      dialogue.subject,
+      `${head.role} · waiting`,
+      head.name,
+      head.role,
+      incident.title,
       () => {
         this.callbacks.onPromptInteract();
       }
@@ -668,13 +669,8 @@ export class UIManager {
    * Displays the in-world interaction prompt when player approaches active department.
    */
   public showInteractionPrompt(deptName: string, incidentTitle: string): void {
-    let formattedDept = `${deptName} Department`;
-    if (this.activeIncident?.id === 'INC_PHISH_1' || deptName === 'IT') {
-      formattedDept = 'Maya Lin (IT Security Lead)';
-    } else {
-      const head = DEPARTMENT_HEADS[deptName as 'IT' | 'HR' | 'FINANCE' | 'LEGAL'];
-      formattedDept = head ? `${head.name} (${head.role})` : `${deptName} Department`;
-    }
+    const head = staffForDepartment(deptName);
+    const formattedDept = `${head.name} (${head.role})`;
 
     this.promptElement.innerHTML = `
       <div class="prompt-content">
@@ -746,6 +742,13 @@ export class UIManager {
     }
   }
 
+  private isTextInputFocused(): boolean {
+    const active = (typeof document !== 'undefined' ? document.activeElement : null) as HTMLElement | null;
+    if (!active) return false;
+    const tag = active.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!active.isContentEditable;
+  }
+
   private stepAwayFromIncident(): void {
     this.releaseTextFocus();
     if (this.workbench) {
@@ -775,6 +778,8 @@ export class UIManager {
     this.workbench?.destroy();
     this.workbench = undefined;
     this.suspendedWorkbench = undefined;
+    this.phishingState = null;
+    this.phishingIncidentId = undefined;
     this.modalContainer.innerHTML = '';
     this.mobileControls?.setEnabled(false);
     this.attachEscapeListener();
@@ -793,6 +798,8 @@ export class UIManager {
     this.suspendedWorkbench = undefined;
     this.outcomeView?.destroy();
     this.outcomeView = undefined;
+    this.phishingState = null;
+    this.phishingIncidentId = undefined;
   }
 
   private attachEscapeListener(): void {
@@ -814,6 +821,696 @@ export class UIManager {
   }
 
   /**
+   * Renders the interactive IT phishing email incident (Turn 1).
+   * Follows the workplace investigation loop inspired by Criminal Case:
+   * 1. Office Transition: Short natural conversation with Tunde Bello at the IT desk (office stays visible).
+   * 2. Candidate opens the suspicious email on the IT workstation.
+   * 3. Investigation Interface: Interactive email inspection, progressive evidence discovery (sender, link, simulated browser).
+   * 4. Relevant Decisions: Only options relevant to candidate's investigation actions are presented.
+   * 5. Decision Execution & Return to Office: Clean aftermath memo and return to office navigation.
+   */
+  private showPhishingEmailModal(
+    incident: Incident,
+    choices: readonly EvaluatedChoice[],
+    startAtWorkstation: boolean = false
+  ): void {
+    this.activeIncident = incident;
+    this.activeChoices = choices;
+    this.mobileControls?.setEnabled(false);
+
+    if (!this.phishingState || this.phishingIncidentId !== incident.id) {
+      this.phishingIncidentId = incident.id;
+      this.phishingState = {
+        linkOpened: false,
+        credentialsSubmitted: false,
+        isSenderInspected: false,
+        isLinkInspected: false,
+        selectedAction: 'action_report',
+      };
+    }
+
+    if (this.escapeKeyListener) {
+      window.removeEventListener('keydown', this.escapeKeyListener);
+    }
+    this.escapeKeyListener = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.hideIncidentModal();
+        this.callbacks.onStepAway?.();
+        return;
+      }
+      if ((e.key === ' ' || e.key === 'Enter') && !this.isTextInputFocused()) {
+        const contBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-dialogue-continue');
+        if (contBtn) {
+          e.preventDefault();
+          contBtn.click();
+        }
+      }
+    };
+    window.addEventListener('keydown', this.escapeKeyListener);
+
+    const head = staffForDepartment(incident.department);
+
+    const renderDeskConversation = () => {
+      this.modalContainer.className = 'modal-backdrop is-desk-overlay';
+
+      const isIntroDone = !!this.phishingState?.introCompleted;
+      const selectedOptionId = this.phishingState?.openingResponse;
+      const selectedOption = selectedOptionId ? getOpeningOption(selectedOptionId) : undefined;
+      const currentStep = this.phishingState?.dialogueStep ?? (selectedOption ? 'amaka_line' : 'opening');
+
+      // Determine single active speaker and their current line
+      let activeSpeakerName = head.name;
+      let activeSpeakerRole = head.role;
+      let activeSpeakerInitials = 'TB';
+      let activeSpeakerColor = head.color;
+      let activeSpeakerGradient = 'linear-gradient(90deg, #0284c7, #2563eb)';
+      let activePortraitUrl = '/assets/portrait_tunde.png';
+      let spokenDialogue = '';
+      let showChoices = false;
+      let showContinueBtn = false;
+      let isFinalReply = false;
+
+      if (isIntroDone) {
+        // Structured post-investigation debrief between Tunde and Amaka
+        const followupStep = this.phishingState?.followupStep ?? 'tunde_brief';
+        const exchange = getFollowupExchange(this.phishingState ?? undefined);
+
+        if (followupStep === 'amaka_reply') {
+          activeSpeakerName = PLAYER.name;
+          activeSpeakerRole = PLAYER.role;
+          activeSpeakerInitials = 'AO';
+          activeSpeakerColor = '#f472b6';
+          activeSpeakerGradient = 'linear-gradient(90deg, #ec4899, #d946ef)';
+          activePortraitUrl = '/assets/portrait_amaka.png';
+          spokenDialogue = exchange.amakaLine;
+          showContinueBtn = true;
+        } else if (followupStep === 'tunde_closing') {
+          spokenDialogue = exchange.tundeClosing;
+          isFinalReply = true;
+        } else {
+          // 'tunde_brief'
+          spokenDialogue = exchange.tundeLine;
+          showContinueBtn = true;
+        }
+      } else if (!selectedOption || currentStep === 'opening') {
+        // Step 1: Tunde speaks opening prompt; Amaka needs to choose
+        spokenDialogue = TUNDE_OPENING_LINE;
+        showChoices = true;
+      } else if (currentStep === 'amaka_line') {
+        // Step 2: Amaka speaks her chosen response line
+        activeSpeakerName = PLAYER.name;
+        activeSpeakerRole = PLAYER.role;
+        activeSpeakerInitials = 'AO';
+        activeSpeakerColor = '#f472b6';
+        activeSpeakerGradient = 'linear-gradient(90deg, #ec4899, #d946ef)';
+        activePortraitUrl = '/assets/portrait_amaka.png';
+        spokenDialogue = selectedOption.amakaLine;
+        showContinueBtn = true;
+      } else {
+        // Step 3: Tunde answers directly to Amaka's chosen line
+        spokenDialogue = selectedOption.tundeResponse;
+        isFinalReply = true;
+      }
+
+      const actionLabel = isIntroDone
+        ? '🖥️ Return to IT workstation ›'
+        : '🖥️ Examine email on IT workstation ›';
+
+      this.modalContainer.innerHTML = `
+        <div class="desk-conversation-panel">
+          <button type="button" id="btn-desk-close" class="btn-icon-close cinematic-close-btn" title="Step away">✕</button>
+
+          <div class="cinematic-conversation-body">
+            <!-- Active Speaker Character Portrait -->
+            <div class="cinematic-portrait-container">
+              <img src="${activePortraitUrl}" alt="${activeSpeakerName}" class="cinematic-portrait-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+              <div class="cinematic-portrait-fallback" style="background-color: ${activeSpeakerColor}">${activeSpeakerInitials}</div>
+            </div>
+
+            <!-- Dialogue & Controls Content Column -->
+            <div class="cinematic-content-col">
+              <div class="cinematic-speaker-tag" style="background: ${activeSpeakerGradient}">
+                ${activeSpeakerName} · ${activeSpeakerRole}
+              </div>
+
+              <div class="cinematic-speech-bubble">
+                <div class="speech-tail"></div>
+                <p class="cinematic-speech-text">“${spokenDialogue}”</p>
+              </div>
+
+              ${
+                showChoices
+                  ? `
+                <div class="cinematic-choices-row">
+                  ${PHISHING_OPENING_OPTIONS.map(
+                    (opt) => `
+                    <button type="button" id="btn-dialogue-opt-${opt.id}" class="dialogue-choice-btn" value="${opt.id}" data-option-id="${opt.id}">
+                      <span class="choice-icon">${opt.id === 'interacted_yet' || opt.id === 'opened_yet' ? '💬' : opt.id === 'what_suspicious' || opt.id === 'dont_touch' ? '🔍' : '💻'}</span>
+                      <span class="choice-text">${opt.label}</span>
+                    </button>
+                  `
+                  ).join('')}
+                </div>
+              `
+                  : ''
+              }
+
+              <div class="cinematic-actions-row">
+                ${
+                  showContinueBtn
+                    ? `
+                  <button type="button" id="btn-dialogue-continue" class="btn btn-primary btn-sm">
+                    Continue ›
+                  </button>
+                `
+                    : ''
+                }
+                <button type="button" id="btn-open-workstation" class="btn ${isFinalReply ? 'btn-primary' : 'btn-secondary'} btn-sm">
+                  <span>${actionLabel}</span>
+                </button>
+                <button type="button" id="btn-desk-step-away" class="btn btn-secondary btn-sm">
+                  Step away
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const openWorkstationBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-open-workstation');
+      const stepAwayBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-desk-step-away');
+      const closeBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-desk-close');
+      const continueBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-dialogue-continue');
+
+      const handleStepAway = () => {
+        this.hideIncidentModal();
+        this.callbacks.onStepAway?.();
+      };
+
+      openWorkstationBtn?.addEventListener('click', () => {
+        if (this.phishingState) {
+          this.phishingState.introCompleted = true;
+          if (!this.phishingState.openingResponse) {
+            this.phishingState.openingResponse = 'examine_first';
+          }
+        }
+        this.callbacks.onTundeIntroCompleted?.();
+        renderWorkstation();
+      });
+
+      stepAwayBtn?.addEventListener('click', handleStepAway);
+      closeBtn?.addEventListener('click', handleStepAway);
+
+      continueBtn?.addEventListener('click', () => {
+        if (this.phishingState) {
+          if (isIntroDone) {
+            if (this.phishingState.followupStep === 'amaka_reply') {
+              this.phishingState.followupStep = 'tunde_closing';
+            } else {
+              this.phishingState.followupStep = 'amaka_reply';
+            }
+          } else {
+            this.phishingState.dialogueStep = 'tunde_reply';
+          }
+          renderDeskConversation();
+        }
+      });
+
+      const choiceButtons = this.modalContainer.querySelectorAll<HTMLButtonElement>('.dialogue-choice-btn');
+      choiceButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const optId = (btn.value || btn.dataset?.optionId || btn.getAttribute?.('data-option-id')) as PhishingOpeningOptionId;
+          if (this.phishingState && optId) {
+            this.phishingState.openingResponse = optId;
+            this.phishingState.dialogueStep = 'amaka_line';
+            renderDeskConversation();
+          }
+        });
+      });
+
+      this.modalContainer.classList.remove('hidden');
+    };
+
+    const renderWorkstation = () => {
+      this.modalContainer.className = 'modal-backdrop is-workstation-overlay';
+      this.modalContainer.innerHTML = `
+        <div class="modal-dialog workstation-panel">
+          <div class="workstation-top-bar">
+            <div class="workstation-title-group">
+              <div class="window-traffic-lights">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+              </div>
+              <span class="workstation-title">🖥️ Mustarred Workstation — ${PLAYER.name} (${PLAYER.name.toLowerCase().replace(' ', '.')}@mustarred.com)</span>
+            </div>
+            <div class="workstation-nav-actions">
+              <button type="button" id="btn-back-to-desk" class="btn btn-secondary btn-xs" title="Return to desk conversation">
+                ← Talk to Tunde
+              </button>
+              <button type="button" id="btn-investigation-step-away" class="btn btn-secondary btn-xs" title="Step away to office">
+                Step away
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-body workstation-body">
+            <!-- Left Column: The Interactive Email Document -->
+            <div class="workstation-doc-card">
+              <div class="artifact-top-bar">
+                <div class="email-doc-title">
+                  <span class="doc-icon">✉️</span>
+                  <strong>${incident.artifact?.title ?? 'FIRS Tax Clearance — action required'}</strong>
+                </div>
+                <span class="phish-badge unread">Inbox (Priority)</span>
+              </div>
+
+              <div class="artifact-meta-grid">
+                <div class="meta-item">
+                  <span class="meta-label">From:</span>
+                  <span class="meta-value"><strong>FIRS e-Services</strong> &lt;support@firs-gov.com.ng&gt;</span>
+                  <button type="button" id="btn-inspect-sender" class="btn btn-secondary btn-xs">
+                    ${this.phishingState?.isSenderInspected ? 'Hide sender details' : 'Inspect sender'}
+                  </button>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">To:</span>
+                  <span class="meta-value">${PLAYER.name.toLowerCase().replace(' ', '.')}@mustarred.com, yusuf.ibrahim@mustarred.com (+9 staff)</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Date:</span>
+                  <span class="meta-value">Today · 08:52 AM</span>
+                </div>
+              </div>
+
+              <!-- Collapsible Sender Inspection Drawer -->
+              <div id="sender-inspection-drawer" class="sender-inspection-drawer ${this.phishingState?.isSenderInspected ? '' : 'hidden'}">
+                <div class="inspection-title">🔍 Technical Headers Analysis</div>
+                <div class="inspection-field"><strong>Return-Path:</strong> &lt;bounce@mail-outbound-relay14.ru&gt;</div>
+                <div class="inspection-field"><strong>Authentication:</strong> SPF: FAIL · IP 185.220.101.44 (Relay in Russia)</div>
+                <div class="inspection-field"><strong>Domain Alert:</strong> firs-gov.com.ng registered 3 days ago. Legitimate government domain is <strong>firs.gov.ng</strong>.</div>
+              </div>
+
+              <!-- Email Body -->
+              <div class="email-body-content">
+                <p>Dear taxpayer,</p>
+                <p>Your 2025 tax clearance certificate is ready. Sign in with your company email to download it before 12 noon, or your filing will be rejected.</p>
+
+                <div class="phish-link-box">
+                  <div class="link-display-row">
+                    <span class="link-label">Attachment Link:</span>
+                    <a href="#" id="link-phish-url" class="phish-download-link">Download certificate  ›</a>
+                    <button type="button" id="btn-check-link" class="btn btn-secondary btn-xs">
+                      ${this.phishingState?.isLinkInspected ? 'Hide link details' : 'Check link'}
+                    </button>
+                    <button type="button" id="btn-open-link" class="btn btn-secondary btn-xs">Open link in browser</button>
+                  </div>
+
+                  <!-- Collapsible Link Inspection Drawer -->
+                  <div id="link-inspection-drawer" class="link-inspection-drawer ${this.phishingState?.isLinkInspected ? '' : 'hidden'}">
+                    <div class="inspection-field"><strong>Target URL:</strong> <code>http://firs-gov.com.ng/portal/tax-clearance</code></div>
+                    <div class="inspection-field"><strong>Security Protocol:</strong> Insecure (HTTP, unencrypted)</div>
+                    <div class="inspection-field"><strong>Host Reputation:</strong> Unregistered lookalike domain mimicking Nigerian tax authority.</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Simulated External Browser Window -->
+              <div id="simulated-browser" class="simulated-browser hidden">
+                <div class="browser-bar">
+                  <span class="browser-status">⚠️ Not secure</span>
+                  <span class="browser-url">http://firs-gov.com.ng/portal/tax-clearance</span>
+                  <button type="button" id="btn-close-browser" class="btn btn-xs">Close page</button>
+                </div>
+                <div class="browser-body">
+                  <div class="phish-brand">Federal Inland Revenue Service — e-Tax Portal</div>
+                  <p class="phish-subhead">Sign in with your corporate workspace account to access the certificate.</p>
+                  <div class="phish-form-group">
+                    <label>Email address</label>
+                    <input type="text" value="${PLAYER.name.toLowerCase().replace(' ', '.')}@mustarred.com" readonly class="phish-input-readonly" />
+                    <label>Password</label>
+                    <input id="input-phish-password" type="password" placeholder="Enter corporate password" class="phish-input" />
+                    <div class="phish-actions-row">
+                      <button type="button" id="btn-submit-credentials" class="btn btn-danger btn-sm">Sign in to download</button>
+                      <button type="button" id="btn-cancel-browser" class="btn btn-secondary btn-sm">Close page</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Discovered Evidence & Relevant Decision -->
+            <div class="workstation-action-sidebar">
+              <!-- Discovered Evidence Tray (Criminal Case inspired) -->
+              <div class="investigation-evidence-tray">
+                <div class="tray-header">
+                  <span class="tray-title">📋 Discovered Evidence</span>
+                  <span id="evidence-counter" class="evidence-counter-badge">0 Findings</span>
+                </div>
+                <div id="evidence-list" class="evidence-list"></div>
+              </div>
+
+              <!-- Dynamic Status Banner -->
+              <div id="phish-status-banner" class="phish-status-banner hidden"></div>
+
+              <!-- Relevant Decision Tray -->
+              <div class="investigation-decision-tray">
+                <div class="decision-tray-header">
+                  <h4 class="decision-heading">Confirm Action on this Email</h4>
+                  <span class="decision-subheading">Options adapt dynamically based on your findings.</span>
+                </div>
+
+                <div id="decision-cards-container" class="decision-cards-container"></div>
+
+                <div class="decision-confirm-bar">
+                  <div class="execution-signoff">
+                    Recorded under ${PLAYER.name} · ${PLAYER.role}
+                  </div>
+                  <button id="btn-execute-decision" class="btn btn-primary btn-large">
+                    Confirm action
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Wire workstation elements
+      const inspectBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-inspect-sender');
+      const inspectionDrawer = this.modalContainer.querySelector<HTMLDivElement>('#sender-inspection-drawer');
+      const checkLinkBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-check-link');
+      const linkDrawer = this.modalContainer.querySelector<HTMLDivElement>('#link-inspection-drawer');
+      const openLinkBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-open-link');
+      const phishLink = this.modalContainer.querySelector<HTMLAnchorElement>('#link-phish-url');
+      const simulatedBrowser = this.modalContainer.querySelector<HTMLDivElement>('#simulated-browser');
+      const closeBrowserBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-close-browser');
+      const cancelBrowserBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-cancel-browser');
+      const submitCredentialsBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-submit-credentials');
+      const statusBanner = this.modalContainer.querySelector<HTMLDivElement>('#phish-status-banner');
+      const evidenceCounter = this.modalContainer.querySelector<HTMLSpanElement>('#evidence-counter');
+      const evidenceList = this.modalContainer.querySelector<HTMLDivElement>('#evidence-list');
+      const cardsContainer = this.modalContainer.querySelector<HTMLDivElement>('#decision-cards-container');
+      const executeBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-execute-decision');
+      const backToDeskBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-back-to-desk');
+      const stepAwayBtn = this.modalContainer.querySelector<HTMLButtonElement>('#btn-investigation-step-away');
+
+      const handleStepAway = () => {
+        this.hideIncidentModal();
+        this.callbacks.onStepAway?.();
+      };
+      backToDeskBtn?.addEventListener('click', () => {
+        if (this.phishingState) {
+          this.phishingState.followupStep = 'tunde_brief';
+        }
+        renderDeskConversation();
+      });
+      stepAwayBtn?.addEventListener('click', handleStepAway);
+
+      const updateEvidenceTray = () => {
+        if (!this.phishingState || !evidenceList || !evidenceCounter) return;
+        const findings: { icon: string; title: string; detail: string; type: string }[] = [];
+
+        if (this.phishingState.isSenderInspected) {
+          findings.push({
+            icon: '🔍',
+            title: 'Suspicious Sender & Failed SPF',
+            detail: 'Return-Path via Russian relay, SPF failed. Domain firs-gov.com.ng registered 3 days ago.',
+            type: 'warning',
+          });
+        }
+        if (this.phishingState.isLinkInspected) {
+          findings.push({
+            icon: '🔗',
+            title: 'Insecure Phishing Destination',
+            detail: 'Unencrypted HTTP link pointing to lookalike host firs-gov.com.ng/portal/tax-clearance.',
+            type: 'warning',
+          });
+        }
+        if (this.phishingState.credentialsSubmitted) {
+          findings.push({
+            icon: '⚠️',
+            title: 'Critical Account Compromise',
+            detail: 'Corporate credentials submitted to untrusted portal. External session transmitted.',
+            type: 'critical',
+          });
+        } else if (this.phishingState.linkOpened) {
+          findings.push({
+            icon: 'ℹ️',
+            title: 'Scam Verified (Credentials Safe)',
+            detail: 'Fake portal visited; you backed out safely without submitting corporate credentials.',
+            type: 'info',
+          });
+        }
+
+        evidenceCounter.textContent = `${findings.length} Finding${findings.length === 1 ? '' : 's'}`;
+        if (findings.length === 0) {
+          evidenceList.innerHTML = `<div class="evidence-empty-hint">Inspect the sender or check the link to uncover forensic evidence.</div>`;
+        } else {
+          evidenceList.innerHTML = findings
+            .map(
+              (f) => `
+              <div class="evidence-item ${f.type}">
+                <span class="evidence-icon">${f.icon}</span>
+                <div class="evidence-content">
+                  <strong class="evidence-title">${f.title}</strong>
+                  <p class="evidence-detail">${f.detail}</p>
+                </div>
+              </div>
+            `
+            )
+            .join('');
+        }
+      };
+
+      const updateStatusView = () => {
+        if (!this.phishingState || !statusBanner) return;
+        if (this.phishingState.credentialsSubmitted) {
+          statusBanner.className = 'phish-status-banner critical';
+          statusBanner.innerHTML = '⚠️ <strong>Credentials submitted:</strong> You entered your password into the external site. Session token was transmitted.';
+          statusBanner.classList.remove('hidden');
+        } else if (this.phishingState.linkOpened) {
+          statusBanner.className = 'phish-status-banner warning';
+          statusBanner.innerHTML = 'ℹ️ <strong>Link opened:</strong> External page requested corporate login. You backed out without entering credentials.';
+          statusBanner.classList.remove('hidden');
+        } else {
+          statusBanner.classList.add('hidden');
+        }
+      };
+
+      const updateDecisionCards = () => {
+        if (!this.phishingState || !cardsContainer) return;
+        const { linkOpened, credentialsSubmitted, selectedAction } = this.phishingState;
+
+        let cardsHtml = '';
+        if (credentialsSubmitted) {
+          const isContain = selectedAction === 'action_contain' || selectedAction === 'action_report';
+          const isDelete = selectedAction === 'action_delete';
+          cardsHtml = `
+            <label id="card-action-contain" class="choice-workbench-card ${isContain ? 'selected' : ''}">
+              <div class="choice-selection-row">
+                <input type="radio" name="phish_decision_action" value="action_contain" ${isContain ? 'checked' : ''} />
+                <div class="choice-title-group">
+                  <span class="choice-card-label">Immediately disclose credential exposure and initiate containment</span>
+                </div>
+                <div class="cost-badge emergency">Emergency Containment</div>
+              </div>
+              <p class="choice-desc">Alert Tunde immediately to revoke active corporate sessions, force password resets, and block the sender domain on the mail gateway.</p>
+              <input type="checkbox" id="cb-reset-amaka" checked style="display: none;" />
+            </label>
+            <label id="card-action-delete" class="choice-workbench-card ${isDelete ? 'selected' : ''}">
+              <div class="choice-selection-row">
+                <input type="radio" name="phish_decision_action" value="action_delete" ${isDelete ? 'checked' : ''} />
+                <div class="choice-title-group">
+                  <span class="choice-card-label">Delete the message without proper escalation</span>
+                </div>
+                <div class="cost-badge critical">Uncontained Breach</div>
+              </div>
+              <p class="choice-desc">Delete from your inbox and keep silent. Leaves your compromised credentials and Yusuf's account exposed to attackers.</p>
+            </label>
+          `;
+        } else if (linkOpened) {
+          const isReport = selectedAction !== 'action_delete';
+          const isDelete = selectedAction === 'action_delete';
+          cardsHtml = `
+            <label id="card-action-report" class="choice-workbench-card ${isReport ? 'selected' : ''}">
+              <div class="choice-selection-row">
+                <input type="radio" name="phish_decision_action" value="action_report" ${isReport ? 'checked' : ''} />
+                <div class="choice-title-group">
+                  <span class="choice-card-label">Report that the link was opened and request further checks</span>
+                </div>
+                <div class="cost-badge warning">Endpoint Verification</div>
+              </div>
+              <p class="choice-desc">Alert Tunde to verify endpoint integrity, block firs-gov.com.ng on the mail gateway, and reset Yusuf's account.</p>
+            </label>
+            <label id="card-action-delete" class="choice-workbench-card ${isDelete ? 'selected' : ''}">
+              <div class="choice-selection-row">
+                <input type="radio" name="phish_decision_action" value="action_delete" ${isDelete ? 'checked' : ''} />
+                <div class="choice-title-group">
+                  <span class="choice-card-label">Delete the message without proper escalation</span>
+                </div>
+                <div class="cost-badge">Unescalated Risk</div>
+              </div>
+              <p class="choice-desc">Delete from your inbox without reporting. Fails to verify endpoint safety or protect Yusuf's compromised account.</p>
+            </label>
+          `;
+        } else {
+          const isReport = selectedAction !== 'action_delete';
+          const isDelete = selectedAction === 'action_delete';
+          cardsHtml = `
+            <label id="card-action-report" class="choice-workbench-card ${isReport ? 'selected' : ''}">
+              <div class="choice-selection-row">
+                <input type="radio" name="phish_decision_action" value="action_report" ${isReport ? 'checked' : ''} />
+                <div class="choice-title-group">
+                  <span class="choice-card-label">Report the suspicious message and coordinate containment</span>
+                </div>
+                <div class="cost-badge">Standard IT Triage</div>
+              </div>
+              <p class="choice-desc">Alert Tunde to block firs-gov.com.ng on the mail gateway and reset Yusuf's compromised account.</p>
+            </label>
+            <label id="card-action-delete" class="choice-workbench-card ${isDelete ? 'selected' : ''}">
+              <div class="choice-selection-row">
+                <input type="radio" name="phish_decision_action" value="action_delete" ${isDelete ? 'checked' : ''} />
+                <div class="choice-title-group">
+                  <span class="choice-card-label">Delete the message without proper escalation</span>
+                </div>
+                <div class="cost-badge">Unescalated Risk</div>
+              </div>
+              <p class="choice-desc">Delete from your inbox without alerting IT. Leaves colleagues exposed to identical emails and Yusuf's account uncontained.</p>
+            </label>
+          `;
+        }
+
+        cardsContainer.innerHTML = cardsHtml;
+
+        // Wire radios
+        const radios = cardsContainer.querySelectorAll<HTMLInputElement>('input[name="phish_decision_action"]');
+        radios.forEach((radio) => {
+          radio.addEventListener('change', () => {
+            if (!this.phishingState) return;
+            if (radio.checked) {
+              this.phishingState.selectedAction = radio.value as 'action_report' | 'action_delete' | 'action_contain';
+              cardsContainer.querySelectorAll('.choice-workbench-card').forEach((c) => c.classList.remove('selected'));
+              radio.closest('.choice-workbench-card')?.classList.add('selected');
+            }
+          });
+        });
+      };
+
+      // Initial updates
+      updateEvidenceTray();
+      updateStatusView();
+      updateDecisionCards();
+
+      // Inspect sender toggle
+      inspectBtn?.addEventListener('click', () => {
+        if (!this.phishingState) return;
+        this.phishingState.isSenderInspected = !this.phishingState.isSenderInspected;
+        if (this.phishingState.isSenderInspected) {
+          inspectionDrawer?.classList.remove('hidden');
+          inspectBtn.textContent = 'Hide sender details';
+        } else {
+          inspectionDrawer?.classList.add('hidden');
+          inspectBtn.textContent = 'Inspect sender';
+        }
+        updateEvidenceTray();
+      });
+
+      // Check link toggle
+      checkLinkBtn?.addEventListener('click', () => {
+        if (!this.phishingState) return;
+        this.phishingState.isLinkInspected = !this.phishingState.isLinkInspected;
+        if (this.phishingState.isLinkInspected) {
+          linkDrawer?.classList.remove('hidden');
+          checkLinkBtn.textContent = 'Hide link details';
+        } else {
+          linkDrawer?.classList.add('hidden');
+          checkLinkBtn.textContent = 'Check link';
+        }
+        updateEvidenceTray();
+      });
+
+      // Open link handlers
+      const handleOpenLink = (e: Event) => {
+        e.preventDefault();
+        if (!this.phishingState) return;
+        this.phishingState.linkOpened = true;
+        simulatedBrowser?.classList.remove('hidden');
+        updateEvidenceTray();
+        updateStatusView();
+        updateDecisionCards();
+      };
+      openLinkBtn?.addEventListener('click', handleOpenLink);
+      phishLink?.addEventListener('click', handleOpenLink);
+
+      // Close browser without entering password
+      const handleCloseBrowser = (e: Event) => {
+        e.preventDefault();
+        simulatedBrowser?.classList.add('hidden');
+        updateEvidenceTray();
+        updateStatusView();
+        updateDecisionCards();
+      };
+      closeBrowserBtn?.addEventListener('click', handleCloseBrowser);
+      cancelBrowserBtn?.addEventListener('click', handleCloseBrowser);
+
+      // Submit credentials
+      submitCredentialsBtn?.addEventListener('click', (e: Event) => {
+        e.preventDefault();
+        if (!this.phishingState) return;
+        this.phishingState.linkOpened = true;
+        this.phishingState.credentialsSubmitted = true;
+        this.phishingState.selectedAction = 'action_contain';
+        simulatedBrowser?.classList.add('hidden');
+        updateEvidenceTray();
+        updateStatusView();
+        updateDecisionCards();
+      });
+
+      // Confirm action execution
+      executeBtn?.addEventListener('click', () => {
+        if (!this.phishingState) return;
+        const { linkOpened, credentialsSubmitted, selectedAction } = this.phishingState;
+        const cbResetAmaka = this.modalContainer.querySelector<HTMLInputElement>('#cb-reset-amaka');
+        const isResetAmakaChecked = cbResetAmaka ? cbResetAmaka.checked : true;
+
+        let choiceId: string;
+        if (credentialsSubmitted) {
+          if ((selectedAction === 'action_contain' || selectedAction === 'action_report') && isResetAmakaChecked) {
+            choiceId = 'CHOICE_MAIL_OPEN_CONTAINED';
+          } else {
+            // Uncontained breach: either chose delete, or uncontained compromise
+            choiceId = 'CHOICE_MAIL_OPEN';
+          }
+        } else if (linkOpened) {
+          if (selectedAction === 'action_report') {
+            choiceId = 'CHOICE_MAIL_INSPECTED_REPORT';
+          } else {
+            choiceId = 'CHOICE_MAIL_DELETE';
+          }
+        } else {
+          if (selectedAction === 'action_report') {
+            choiceId = 'CHOICE_MAIL_REPORT';
+          } else {
+            choiceId = 'CHOICE_MAIL_DELETE';
+          }
+        }
+
+        this.callbacks.onSelectChoice(choiceId);
+      });
+
+      this.modalContainer.classList.remove('hidden');
+    };
+
+    if (startAtWorkstation) {
+      renderWorkstation();
+    } else {
+      renderDeskConversation();
+    }
+  }
+
+  /**
    * Renders the complete, living incident consultation experience:
    * 1. Executive Briefing with Department Head
    * 2. Confirmed Facts vs Key Uncertainties breakdown
@@ -823,8 +1520,14 @@ export class UIManager {
   public showIncidentModal(
     incident: Incident,
     choices: readonly EvaluatedChoice[],
-    interactionSpec?: IncidentInteractionSpec
+    interactionSpec?: IncidentInteractionSpec,
+    startAtWorkstation: boolean = false
   ): void {
+    if (incident.id === 'INC_MAIL_FIRS') {
+      this.showPhishingEmailModal(incident, choices, startAtWorkstation);
+      return;
+    }
+
     if (interactionSpec) {
       this.showIncidentWorkbench(incident, interactionSpec);
       return;
@@ -835,48 +1538,23 @@ export class UIManager {
     this.activeIncident = incident;
     this.activeChoices = choices;
     this.answeredQuestions.clear();
-    this.selectedStrategyId = choices.find((c) => !c.isLocked)?.id ?? choices[0]?.id ?? null;
+    this.selectedStrategyId =
+      choices.find((c) => !c.isLocked && c.isDefault)?.id ??
+      choices.find((c) => !c.isLocked)?.id ??
+      choices[0]?.id ??
+      null;
 
-    const dialogue = INCIDENT_DIALOGUES[incident.turn];
+    const head = staffForDepartment(incident.department);
     const deptClass = incident.department.toLowerCase();
 
-    const confirmedFactsHtml = dialogue.confirmedFacts.map((f) => `<li>${f}</li>`).join('');
-    const uncertaintiesHtml = dialogue.uncertainties.map((u) => `<li>${u}</li>`).join('');
-
-    const probingQuestionsHtml = dialogue.probingQuestions
-      .map((q) => {
-        return `
-        <div class="qa-item" data-qa-id="${q.id}">
-          <button class="qa-question-btn" type="button">
-            <span class="qa-icon">❓</span>
-            <span class="qa-text">"${q.question}"</span>
-            <span class="qa-chevron">▶</span>
-          </button>
-          <div class="qa-answer hidden">
-            <div class="qa-speaker">
-              <span class="qa-avatar-tag" style="background-color: ${dialogue.head.avatarColor}">
-                ${dialogue.head.name}
-              </span>
-              <span class="qa-role">${dialogue.head.role}</span>
-            </div>
-            <p class="qa-quote">"${q.answer}"</p>
-          </div>
-        </div>
-      `;
-      })
-      .join('');
 
     const choicesHtml = choices
       .map((choice) => {
         const costPreview = this.getChoiceFinancialPreview(choice);
-        const benefits = this.getChoiceOperationalBenefits(choice.id);
-        const risks = this.getChoiceRisks(choice.id);
-        const uncertainty = this.getChoiceUncertainty(choice.id);
-        const isRecommended = choice.id === dialogue.headRecommendation.choiceId;
 
         const lockAlert = choice.isLocked
           ? `<div class="lock-banner">
-              <span class="lock-icon">🔒 Policy Unavailable</span>
+              <span class="lock-icon">🔒 Not available</span>
               <span class="lock-reason">${choice.lockReasons.join('; ')}</span>
             </div>`
           : '';
@@ -895,41 +1573,11 @@ export class UIManager {
             />
             <div class="choice-title-group">
               <span class="choice-card-label">${choice.label}</span>
-              ${isRecommended ? '<span class="rec-badge">⭐ Recommended by ' + dialogue.head.name.split(' ')[0] + '</span>' : ''}
             </div>
             <div class="cost-badge">${costPreview}</div>
           </div>
           <p class="choice-desc">${choice.description}</p>
-
-          <div class="choice-factors">
-            <div class="factor-row">
-              <span class="factor-label benefits">Operational Benefits:</span>
-              <span class="factor-text">${benefits}</span>
-            </div>
-            <div class="factor-row">
-              <span class="factor-label risks">Identified Risks:</span>
-              <span class="factor-text">${risks}</span>
-            </div>
-            <div class="factor-row">
-              <span class="factor-label uncertainty">Uncertainty Factor:</span>
-              <span class="factor-text">${uncertainty}</span>
-            </div>
-          </div>
           ${lockAlert}
-        </label>
-      `;
-      })
-      .join('');
-
-    const checkboxesHtml = dialogue.controlConfig.checkboxes
-      .map((cb) => {
-        return `
-        <label class="safeguard-checkbox-row">
-          <input type="checkbox" id="${cb.id}" ${cb.defaultChecked ? 'checked' : ''} />
-          <div class="safeguard-label-group">
-            <span class="safeguard-label">${cb.label}</span>
-            <span class="safeguard-desc">${cb.description}</span>
-          </div>
         </label>
       `;
       })
@@ -937,107 +1585,85 @@ export class UIManager {
 
     this.modalContainer.innerHTML = `
       <div class="modal-dialog incident-dialog">
-        <!-- Dialog Header -->
         <div class="modal-header ${deptClass}">
           <div class="dept-indicator">
-            <span class="consult-badge" style="background-color: ${dialogue.head.avatarColor}">
-              ${dialogue.head.name} · ${dialogue.head.role}
+            <span class="consult-badge" style="background-color: ${head.color}">
+              ${head.name} · ${head.role}
             </span>
-            <span class="turn-indicator">${dialogue.timestamp}</span>
+            ${
+              incident.alsoPresent
+                ? `<span class="consult-badge is-secondary">${incident.alsoPresent.name} · ${incident.alsoPresent.role}</span>`
+                : ''
+            }
+            <span class="turn-indicator">Turn ${incident.turn} · ${COMPANY.city}</span>
           </div>
           <h2 class="incident-title">${incident.title}</h2>
-          <span class="severity-badge ${incident.urgency.toLowerCase()}">${incident.urgency.toUpperCase()} PRIORITY</span>
+          <span class="severity-badge ${incident.urgency.toLowerCase()}">${incident.urgency.toUpperCase()}</span>
         </div>
 
         <div class="modal-body">
-          <!-- Section 1: Executive Briefing Narrative -->
           <div class="consultation-section briefing-card">
-            <div class="section-badge-header">
-              <span class="badge-num">1</span>
-              <h3>Department Head Situation Briefing</h3>
-            </div>
             <div class="briefing-speech-bubble">
-              <p class="spoken-briefing">"${dialogue.briefingLead}"</p>
+              <span class="voice-name">${head.name} · ${head.role}</span>
+              <p class="spoken-briefing">"${incident.basePremise}"</p>
             </div>
-
-            <div class="intel-grid">
-              <div class="intel-column facts">
-                <div class="column-title">📋 Confirmed Facts</div>
-                <ul>${confirmedFactsHtml}</ul>
-              </div>
-              <div class="intel-column uncertainties">
-                <div class="column-title">❓ Key Uncertainties & Assumptions</div>
-                <ul>${uncertaintiesHtml}</ul>
-              </div>
-            </div>
-
-            <div class="business-impact-box">
-              <strong>⚠️ Immediate Business Risk:</strong> ${dialogue.businessImpact}
-            </div>
-
-            <div class="recommendation-card">
-              <div class="rec-header">
-                <span class="rec-label">Professional Recommendation:</span>
-                <span class="rec-title">${dialogue.headRecommendation.title}</span>
-              </div>
-              <p class="rec-rationale">"${dialogue.headRecommendation.rationale}"</p>
-            </div>
+            ${
+              incident.alsoPresent
+                ? `<div class="briefing-speech-bubble is-second">
+                    <span class="voice-name">${incident.alsoPresent.name} · ${incident.alsoPresent.role}</span>
+                    <p class="spoken-briefing">"${incident.alsoPresent.line}"</p>
+                  </div>
+                  ${
+                    incident.alsoPresent.followUp
+                      ? `<details class="voice-followup">
+                          <summary>Ask ${incident.alsoPresent.name.split(' ')[0]}: "${incident.alsoPresent.followUp.question}"</summary>
+                          <p class="voice-answer">"${incident.alsoPresent.followUp.answer}"</p>
+                        </details>`
+                      : ''
+                  }`
+                : ''
+            }
+            ${
+              incident.artifact
+                ? `<div class="incident-artifact">
+                    <span class="artifact-title">${incident.artifact.title}</span>
+                    <span class="artifact-meta">${incident.artifact.meta}</span>
+                    ${incident.artifact.lines.map((line) => `<p>${line}</p>`).join('')}
+                  </div>`
+                : ''
+            }
+            <p class="section-help">${incident.businessContext}</p>
           </div>
 
-          <!-- Section 2: Probing Inquiries (Interactive Q&A) -->
-          <div class="consultation-section qa-section">
-            <div class="section-badge-header">
-              <span class="badge-num">2</span>
-              <h3>Executive Inquiries & Department Clarifications</h3>
-            </div>
-            <p class="section-help">Click any question below to probe ${dialogue.head.name} for critical operational details:</p>
-            <div class="qa-list">
-              ${probingQuestionsHtml}
-            </div>
-          </div>
-
-          <!-- Section 3: Tailored Decision Workbench -->
           <div class="consultation-section workbench-section">
-            <div class="section-badge-header">
-              <span class="badge-num">3</span>
-              <h3>${dialogue.controlConfig.sectionTitle}</h3>
-            </div>
-
-            <h4 class="workbench-subhead">Select Primary Strategy:</h4>
+            <h4 class="workbench-subhead">${incident.decisionPrompt ?? 'What do you want done?'}</h4>
             <div class="choices-list">
               ${choicesHtml}
             </div>
 
-            <h4 class="workbench-subhead">${dialogue.controlConfig.checklistLabel}:</h4>
-            <div class="safeguards-container">
-              ${checkboxesHtml}
-            </div>
-
-            <!-- Custom Executive Directive & Proposal Field -->
             <div class="directive-section">
               <div class="directive-header">
-                <span class="directive-title">✍️ Additional Instructions & Strategic Proposals</span>
-                <span class="directive-hint">Type your directives or proposed alternative in plain English</span>
+                <span class="directive-title">Your instruction</span>
+                <span class="directive-hint">Optional. Type it in your own words.</span>
               </div>
               <div class="directive-input-group">
                 <input
                   id="directive-input"
                   type="text"
                   class="directive-input"
-                  placeholder="${dialogue.controlConfig.directivePlaceholder}"
+                  placeholder="e.g. Reset his password and warn the staff."
                 />
-                <button id="btn-submit-directive" class="btn btn-secondary" type="button">Analyze Proposal</button>
+                <button id="btn-submit-directive" class="btn btn-secondary" type="button">Read it back</button>
               </div>
               <div id="directive-feedback" class="directive-feedback hidden"></div>
             </div>
 
-            <!-- Execution Action Bar -->
             <div class="workbench-execution-bar">
               <div class="execution-warning">
-                Decisions have immediate cash burn impacts and create cross-department consequences.
+                This goes on the record under your name, ${PLAYER.short}.
               </div>
               <button id="btn-execute-decision" class="btn btn-primary btn-large">
-                Sign Executive Directive & Authorize Implementation
+                Authorise
               </button>
             </div>
           </div>
@@ -1213,7 +1839,9 @@ export class UIManager {
     crossReaction?: CrossDeptReaction | readonly CrossDeptReaction[]
   ): void {
     const isCompleted = nextPhase === 'SIMULATION_COMPLETED' || isInsolvent;
-    const isPhishing = record.chosenOptionId.startsWith('CHOICE_PHISH_');
+    const isPhishing =
+      record.chosenOptionId.startsWith('CHOICE_PHISH_') ||
+      record.chosenOptionId.startsWith('CHOICE_MAIL_');
 
     const scheduledHtml =
       record.delayedEffectsScheduled.length > 0
@@ -1273,10 +1901,12 @@ export class UIManager {
         : '';
 
     const continueBtnText = isPhishing
-      ? 'Return to Office & Review Fallout'
+      ? 'Return to office'
       : isCompleted
       ? 'View Performance Debrief'
       : 'Proceed to Next Turn';
+
+    const outcomeDialogue = isPhishing ? getPhishingOutcomeConversation(record.chosenOptionId) : null;
 
     this.modalContainer.innerHTML = `
       <div class="modal-dialog resolution-dialog">
@@ -1289,6 +1919,26 @@ export class UIManager {
           <div class="resolution-summary">
             <p>${record.effectiveChoiceImpact.operationalExplanation}</p>
           </div>
+
+          ${
+            outcomeDialogue
+              ? `
+          <div class="resolution-outcome-dialogue">
+            <div class="resolution-outcome-title">
+              <span>🛡️ Post-Incident Debrief: ${outcomeDialogue.title}</span>
+            </div>
+            <div class="outcome-dialogue-card tunde">
+              <div class="outcome-speaker-tag">Tunde Bello · Head of IT</div>
+              <p class="outcome-quote">“${outcomeDialogue.tundeLine}”</p>
+            </div>
+            <div class="outcome-dialogue-card amaka">
+              <div class="outcome-speaker-tag">Amaka Obi · Chief Compliance Officer</div>
+              <p class="outcome-quote">“${outcomeDialogue.amakaLine}”</p>
+            </div>
+          </div>
+          `
+              : ''
+          }
 
           <div class="stat-deltas-grid">
             <div class="delta-card">
@@ -1322,8 +1972,20 @@ export class UIManager {
           ${resolvedHtml}
 
           <div class="learning-feedback-box">
-            <h4>💡 Management Takeaway: ${record.learningFeedback.corePrinciple}</h4>
-            <p>${record.learningFeedback.tradeoffSummary}</p>
+            <h4>💡 Professional Takeaway: ${record.learningFeedback.corePrinciple}</h4>
+            <p class="takeaway-summary">${record.learningFeedback.tradeoffSummary}</p>
+            ${
+              record.learningFeedback.risksCreated && record.learningFeedback.risksCreated.length > 0
+                ? `
+            <div class="takeaway-escalation">
+              <strong>Further Investigation & Escalation Required:</strong>
+              <ul>
+                ${record.learningFeedback.risksCreated.map((r: string) => `<li>${r}</li>`).join('')}
+              </ul>
+            </div>
+            `
+                : ''
+            }
           </div>
 
           <div class="modal-footer">
@@ -1394,7 +2056,7 @@ export class UIManager {
 
           <div class="gameover-footer">
             <button id="btn-gameover-restart" class="btn btn-danger btn-large">
-              🔄 Try Again as CEO
+              🔄 Try Again
             </button>
           </div>
         </div>
@@ -1582,81 +2244,6 @@ export class UIManager {
     }
   }
 
-  private getChoiceOperationalBenefits(choiceId: string): string {
-    switch (choiceId) {
-      case 'CHOICE_1A':
-        return 'Engages external specialists to analyze database logs, verify database integrity, and build a verified, hardened patch (+20 IT).';
-      case 'CHOICE_1B':
-        return 'Instructs internal engineers to deploy an emergency hotfix tonight to block the vulnerable API endpoint, conserving liquid cash (-25 IT).';
-      case 'CHOICE_1C':
-        return 'Rebuilds the authentication service through a mandatory 72-hour weekend sprint without external consulting costs (+15 IT, -30 HR).';
-      case 'CHOICE_2A':
-        return 'Brings engineering salaries to the 75th percentile with retention bonuses, halting developer departures decisively (+20 HR, +5 IT).';
-      case 'CHOICE_2B':
-        return 'Provides catered team lunches and title promotions while conserving cash and avoiding permanent payroll additions.';
-      case 'CHOICE_2C':
-        return 'Secures agreements with core system architects using targeted retention grants and a sustainable $1,000/mo burn adjustment (+5 HR, +5 IT).';
-      case 'CHOICE_3A':
-        return 'Enacts immediate spending controls, cutting gross burn by $6,000/mo without taking on external debt (-5 IT, -20 HR).';
-      case 'CHOICE_3B':
-        return 'Draws $75,000 from an approved venture credit facility at 8.0% APR with $3,500/mo principal amortization, bolstering cash reserves.';
-      case 'CHOICE_3C':
-        return 'Conducts a collaborative cloud audit and instance optimization for $10,000, permanently lowering gross hosting burn by $2,000–$5,000/mo (-5 IT).';
-      default:
-        return 'Benefits under assessment.';
-    }
-  }
-
-  private getChoiceRisks(choiceId: string): string {
-    switch (choiceId) {
-      case 'CHOICE_1A':
-        return 'Drains $30,000 in liquid reserves, leaving less financial buffer for upcoming operational challenges.';
-      case 'CHOICE_1B':
-        return 'Skipping root-cause forensics destabilizes systems (-25 IT) and schedules a latent delayed breach liability in Turn 3 (-$15,000 cash, -10 IT).';
-      case 'CHOICE_1C':
-        return 'Grueling 72-hour uncompensated weekend sprint severely exhausts developers (-30 HR) and triggers punitive compensation demands in Turn 2.';
-      case 'CHOICE_2A':
-        return 'Permanently increases monthly payroll burn by $6,000/mo. If preceded by a Turn 1 crunch, requires an acute $80,000 upfront retention bonus.';
-      case 'CHOICE_2B':
-        return 'Superficial perks during a compensation crisis are perceived as dismissive, severely damaging team morale (-35 HR; -45 HR and -20 IT if preceded by a crunch).';
-      case 'CHOICE_2C':
-        return 'Selective retention packages require strict confidentiality to prevent resentment among non-targeted developers.';
-      case 'CHOICE_3A':
-        return 'Deprives developers of essential tooling (-5 IT, -20 HR). If HR morale is already below 45, triggers an additional -10 HR penalty (-30 total).';
-      case 'CHOICE_3B':
-        return 'Mandatory debt service ($3,500/mo principal + 8% APR interest) adds roughly $4,000/mo to settlement cash needs and incurs a debt leverage rating penalty.';
-      case 'CHOICE_3C':
-        return 'Requires an upfront $10,000 cash outlay. Locked if HR morale is critically low (< 45); maximum $5,000/mo savings requires high HR morale (> 70).';
-      default:
-        return 'Trade-offs under assessment.';
-    }
-  }
-
-  private getChoiceUncertainty(choiceId: string): string {
-    switch (choiceId) {
-      case 'CHOICE_1A':
-        return 'Whether cooperating with external auditors will pull senior developers away from sprint tasks for several days.';
-      case 'CHOICE_1B':
-        return 'High: Whether threat actors already exfiltrated customer data before the hotfix deployed remains unknown.';
-      case 'CHOICE_1C':
-        return 'High: Risk of immediate developer resignations if engineers push back against mandatory overtime.';
-      case 'CHOICE_2A':
-        return 'Moderate: Future salary expectations may rise further as market conditions evolve.';
-      case 'CHOICE_2B':
-        return 'High: Whether staff will perceive the event as genuine appreciation or empty management posturing.';
-      case 'CHOICE_2C':
-        return 'Moderate: Risk of non-selected developers seeking outside offers if bonus agreements leak.';
-      case 'CHOICE_3A':
-        return 'Moderate: Impact on engineering velocity and customer support response times.';
-      case 'CHOICE_3B':
-        return 'Contractual: Mandatory monthly principal and interest payments are legally binding regardless of company performance.';
-      case 'CHOICE_3C':
-        return 'Moderate: Total cloud burn savings depend on HR morale (base -$2,000/mo; -$5,000/mo if HR morale > 70).';
-      default:
-        return 'Variables undetermined.';
-    }
-  }
-
   // ==========================================================================
   // FORMATTING & HELPERS
   // ==========================================================================
@@ -1696,15 +2283,14 @@ export class UIManager {
   }
 
   private getTurnDepartmentName(turn: number): string {
-    switch (turn) {
-      case 1:
-        return 'IT (Sarah Chen)';
-      case 2:
-        return 'HR (Elena Rostova)';
-      case 3:
-        return 'Finance (David Vance)';
-      default:
-        return 'Main Lobby';
+    const order = ['IT', 'HR', 'FINANCE', 'LEGAL'] as const;
+    const department = order[turn - 1];
+    if (!department) {
+      return 'Main Lobby';
     }
+    const head = staffForDepartment(department);
+    const label =
+      department === 'HR' ? 'People' : department === 'FINANCE' ? 'Finance' : department === 'LEGAL' ? 'Legal' : 'IT';
+    return `${label} (${head.name})`;
   }
 }

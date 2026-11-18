@@ -32,7 +32,7 @@ export type MetricScore = number;
 /**
  * Primary organizational departments modeled in the corporate simulation.
  */
-export type DepartmentId = 'HR' | 'IT' | 'FINANCE';
+export type DepartmentId = 'HR' | 'IT' | 'FINANCE' | 'LEGAL';
 
 /**
  * Categorical performance rating bands awarded at completion or evaluation.
@@ -339,6 +339,8 @@ export interface ScenarioChoice {
   readonly label: string;
   readonly description: string;
   readonly executiveRationale: string;
+  /** Pre-selected in the briefing, so the careless default is never the risky one. */
+  readonly isDefault?: boolean;
   readonly baseImpact: ChoiceImpact;
   /** Optional delayed consequence scheduled upon selecting this option. */
   readonly scheduledDelayedEffect?: Omit<
@@ -359,6 +361,8 @@ export interface EvaluatedChoice {
   readonly executiveRationale: string;
   readonly effectiveImpact: ChoiceImpact;
   readonly isLocked: boolean;
+  /** True when the briefing should pre-select this option. */
+  readonly isDefault: boolean;
   /** Deterministic, deduplicated list of reasons if locked by one or more modifiers. */
   readonly lockReasons: readonly string[];
   readonly scheduledDelayedEffect?: Omit<
@@ -399,6 +403,33 @@ export interface NarrativeVariant {
 }
 
 /**
+ * A second person in the room during a briefing, so the player hears the person
+ * the incident happened to as well as the head of department.
+ */
+export interface IncidentVoice {
+  readonly name: string;
+  readonly role: string;
+  /** One line, in their own words. */
+  readonly line: string;
+  /** One question the player can put to them, answered on the spot. */
+  readonly followUp?: {
+    readonly question: string;
+    readonly answer: string;
+  };
+}
+
+/**
+ * The thing on the desk: an email, a contract clause, a client's message.
+ * Rendering it makes each desk a different task instead of the same menu.
+ */
+export interface IncidentArtifact {
+  readonly title: string;
+  /** Sender, date, file reference — one line of provenance. */
+  readonly meta: string;
+  readonly lines: readonly string[];
+}
+
+/**
  * An organizational dilemma presented to the executive on a specific turn.
  */
 export interface Incident {
@@ -409,6 +440,12 @@ export interface Incident {
   readonly urgency: IncidentUrgency;
   readonly basePremise: string;
   readonly businessContext: string;
+  /** Someone else in the room who speaks for themselves. */
+  readonly alsoPresent?: IncidentVoice;
+  /** What is physically on the desk, when the task is to read something. */
+  readonly artifact?: IncidentArtifact;
+  /** The question this desk is actually asking, e.g. "What do you do with this mail?". */
+  readonly decisionPrompt?: string;
   readonly narrativeVariants: readonly NarrativeVariant[];
   readonly choices: readonly ScenarioChoice[];
 }

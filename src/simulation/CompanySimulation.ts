@@ -798,6 +798,7 @@ export class CompanySimulation {
         effectiveImpact,
         isLocked: isLocked || lockReasons.length > 0,
         lockReasons: Object.freeze(lockReasons),
+        isDefault: choice.isDefault ?? false,
         scheduledDelayedEffect: choice.scheduledDelayedEffect,
         learningFeedback: choice.learningFeedback,
       };

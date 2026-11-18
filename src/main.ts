@@ -22,7 +22,8 @@ import { buildPhishingReactions } from './ui/phishingComms.ts';
 import type { DepartmentKey } from './game/OfficeScene.ts';
 import { OfficeScene } from './game/OfficeScene.ts';
 import { UIManager } from './ui/UIManager.ts';
-import { buildCrossDeptReaction } from './ui/commsData.ts';
+import { buildIncidentMemo } from './ui/incidentMemo.ts';
+import { COMPANY, departmentLabel, staffForDepartment } from './ui/staff.ts';
 import './style.css';
 
 interface CommittedResolution {
@@ -66,6 +67,9 @@ const ui = new UIManager({
   },
   onStepAway: () => {
     officeScene.setMovementLocked(false);
+  },
+  onTundeIntroCompleted: () => {
+    officeScene.setTundeIntroCompleted(true);
   },
   onVirtualMove: (dx: number, dy: number) => {
     officeScene.setVirtualMovement(dx, dy);
@@ -195,10 +199,8 @@ handleSelectChoice = (choiceId: string, _additionalInstructions?: string) => {
     return;
   }
 
-  const reaction = buildCrossDeptReaction(choiceId, result.record, result.updatedState);
-  if (reaction) {
-    ui.addCrossDeptReaction(reaction);
-  }
+  const reaction = buildIncidentMemo(result.record, result.updatedState);
+  ui.addCrossDeptReaction(reaction);
   ui.updateHUD(result.updatedState);
   ui.showResolutionModal(result.record, result.nextPhase, sim.getState().isInsolvent, reaction);
 };
@@ -219,16 +221,16 @@ handleDismissResolution = () => {
     officeScene.triggerEmergencyAlert();
     if (state.isInsolvent) {
       ui.showGameOver(
-        'ENTERPRISE BANKRUPTCY',
-        'The board would like a word. Unfortunately, there is no board anymore.',
-        'Cash reserves fell below zero during monthly settlement. Paychecks bounced, vendors cut service, and the company was forced into immediate liquidation.',
+        'OUT OF MONEY',
+        `Salaries for the month did not clear. ${COMPANY.md} has called a staff meeting at 4pm.`,
+        'The account went to zero at month end. Staff were paid late, two suppliers stopped delivery and the office closed the following Friday.',
         sim.getDecisionHistory()
       );
     } else {
       ui.showGameOver(
-        'ORGANIZATIONAL COLLAPSE',
-        'Company status: Out of business. Your former engineers are venting on Hacker News.',
-        'The Monday morning crisis spiralled out of control. Talent walked, legal claims mounted, and a $40,000 contract penalty wiped the budget savings.',
+        'THE MORNING WENT BADLY',
+        'Three decisions, three fires that were still burning on Friday.',
+        'The staff dispute went to the union, the regulator asked for records we did not keep, and the contract Chinedu signed still has eleven months to run.',
         sim.getDecisionHistory()
       );
     }
@@ -260,7 +262,7 @@ handleDismissResolution = () => {
   const nextDept = (nextIncident?.department as DepartmentKey) ?? null;
 
   if (lastChoiceId) {
-    const resolvedDept = (['IT', 'HR', 'FINANCE'] as DepartmentKey[]).find(
+    const resolvedDept = (['IT', 'HR', 'FINANCE', 'LEGAL'] as DepartmentKey[]).find(
       (d) => d === state.decisionLedger[state.decisionLedger.length - 1]?.department
     );
     if (resolvedDept) {
@@ -339,15 +341,15 @@ if (activeIncident) {
 // Fire staggered toasts for all three departments so the player knows
 // every desk is on fire simultaneously
 const scenario = MONDAY_MORNING_SCENARIO;
-const deptLabels: Record<string, string> = { IT: 'IT Department', HR: 'Human Resources', FINANCE: 'Finance' };
 scenario.incidents.slice(1).forEach((inc, idx) => {
+  const head = staffForDepartment(inc.department);
   setTimeout(() => {
     ui.showToastNotification(
-      `URGENT · ${deptLabels[inc.department] ?? inc.department}`,
-      inc.department === 'HR' ? 'Elena Rostova' : 'David Vance',
-      inc.department === 'HR' ? 'Head of Human Resources' : 'Interim CFO',
+      `${departmentLabel(inc.department)} · waiting on you`,
+      head.name,
+      head.role,
       inc.title,
-      () => { /* player navigates manually */ }
+      () => { /* player walks over when ready */ }
     );
   }, (idx + 1) * 1200);
 });
