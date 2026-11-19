@@ -1408,6 +1408,13 @@ export class OfficeScene extends Phaser.Scene {
     shadowGfx.fillRect(1176, 764, 8, 120);
     shadowGfx.fillRect(1176, 1064, 8, 140);
 
+    // Drop shadows along southern edges of northern boundary partition walls
+    shadowGfx.fillRect(550, 200, 500, 8); // Lobby corridor north wall
+    shadowGfx.fillRect(335, 190, 215, 8); // IT suite north wall (aisle)
+    shadowGfx.fillRect(132, 175, 93, 8);  // IT suite north wall (rack-to-desk)
+    shadowGfx.fillRect(20, 175, 112, 8);  // IT suite north wall (west server rack cap)
+    shadowGfx.fillRect(1050, 190, 538, 8); // HR suite north wall
+
     // 2. Perimeter boundary walls (exact collision coordinates preserved)
     this.createObstacle(800, 12, OfficeScene.WORLD_WIDTH, 24, wallColor, strokeColor);
     this.createObstacle(800, 1188, OfficeScene.WORLD_WIDTH, 24, wallColor, strokeColor);
@@ -1437,6 +1444,16 @@ export class OfficeScene extends Phaser.Scene {
     this.createObstacle(1170, 760, 20, 120, wallColor, strokeColor);
     this.createObstacle(1170, 1060, 20, 140, wallColor, strokeColor);
 
+    // Northern Playable Area Boundary Walls (encloses corridor and suites to prevent HUD occlusion)
+    // Lobby Corridor North Wall: connects IT entrance to HR entrance above doorways (y=200)
+    this.createObstacle(800, 185, 500, 30, wallColor, strokeColor);
+    // IT Suite North Walls: closes off out-of-bounds space above Tunde aisle, Kelechi workstation, and server racks
+    this.createObstacle(442.5, 175, 215, 30, wallColor, strokeColor);
+    this.createObstacle(178.5, 160, 93, 30, wallColor, strokeColor);
+    this.createObstacle(76, 160, 112, 30, wallColor, strokeColor);
+    // HR Suite North Wall: closes off out-of-bounds space across the entire suite (y=190)
+    this.createObstacle(1319, 175, 538, 30, wallColor, strokeColor);
+
     // 4. Architectural 3D top-capping and natural department-themed baseboard trims
     const trim = this.add.graphics();
     trim.setDepth(6);
@@ -1456,18 +1473,33 @@ export class OfficeScene extends Phaser.Scene {
     trim.fillRect(900, 682, 260, 4);
     trim.fillRect(1180, 682, 360, 4);
 
+    // Top-cap trim on northern boundary partition walls
+    trim.fillRect(550, 170, 500, 4);
+    trim.fillRect(335, 160, 215, 4);
+    trim.fillRect(132, 145, 93, 4);
+    trim.fillRect(20, 145, 112, 4);
+    trim.fillRect(1050, 160, 538, 4);
+
     // Subtle, natural baseboard trims (no harsh neon colors)
     // IT baseboard trim (soft steel-slate)
     trim.fillStyle(0x718096, 0.6);
     trim.fillRect(60, 480, 480, 3);
     trim.fillRect(538, 60, 3, 140);
     trim.fillRect(538, 340, 3, 140);
+    trim.fillRect(335, 188, 215, 3);
+    trim.fillRect(132, 173, 93, 3);
+    trim.fillRect(20, 173, 112, 3);
+
+    // Lobby north baseboard trim (warm brass / slate)
+    trim.fillStyle(0xa0aec0, 0.6);
+    trim.fillRect(550, 198, 500, 3);
 
     // HR baseboard trim (soft sage green)
     trim.fillStyle(0x688b77, 0.6);
     trim.fillRect(1060, 480, 480, 3);
     trim.fillRect(1058, 60, 3, 140);
     trim.fillRect(1058, 340, 3, 140);
+    trim.fillRect(1050, 188, 538, 3);
 
     // Finance baseboard trim (warm caramel oak)
     trim.fillStyle(0x9b7b59, 0.6);

@@ -54,7 +54,89 @@ const IT_OBSTACLES: readonly ITObstacle[] = [
   { name: 'East Wall Bottom', minX: 540, maxX: 560, minY: 340, maxY: 500 },
   // South Partition Wall
   { name: 'South Wall', minX: 20, maxX: 540, minY: 480, maxY: 500 },
+  // IT Suite North Boundary Partitions (seals out-of-bounds space behind furniture)
+  { name: 'IT North Wall Aisle', minX: 335, maxX: 550, minY: 160, maxY: 190 },
+  { name: 'IT North Wall Rack', minX: 132, maxX: 225, minY: 145, maxY: 175 },
+  { name: 'IT North Wall West Rack', minX: 20, maxX: 132, minY: 145, maxY: 175 },
 ];
+
+const ALL_OFFICE_OBSTACLES: readonly ITObstacle[] = [
+  ...IT_OBSTACLES,
+  // Lobby Corridor North Wall (connects IT doorway top at x=550 to HR doorway top at x=1050)
+  { name: 'Lobby Corridor North Wall', minX: 550, maxX: 1050, minY: 170, maxY: 200 },
+  // HR West Wall (upper section)
+  { name: 'HR West Wall Top', minX: 1040, maxX: 1060, minY: 20, maxY: 200 },
+  // HR West Wall (lower section)
+  { name: 'HR West Wall Bottom', minX: 1040, maxX: 1060, minY: 340, maxY: 500 },
+  // HR Suite North Boundary Wall
+  { name: 'HR North Wall', minX: 1050, maxX: 1588, minY: 160, maxY: 190 },
+];
+
+/**
+ * Simulates Arcade Physics step-by-step rectangular body movement with axis-aligned
+ * collision separation against static obstacles (matches Phaser 3 Arcade Physics).
+ */
+function simulatePlayerMovementStep(
+  currentPos: { x: number; y: number },
+  dx: number,
+  dy: number,
+  speed: number,
+  dtSeconds: number,
+  obstacles: readonly ITObstacle[],
+  halfSize = 15
+): { x: number; y: number; collidedX: boolean; collidedY: boolean } {
+  let newX = currentPos.x;
+  let newY = currentPos.y;
+  let collidedX = false;
+  let collidedY = false;
+
+  const length = Math.hypot(dx, dy);
+  if (length === 0) {
+    return { x: newX, y: newY, collidedX, collidedY };
+  }
+
+  const scale = length > 1 ? 1 / length : 1;
+  const vx = dx * scale * speed;
+  const vy = dy * scale * speed;
+
+  // 1. Horizontal movement and separation
+  newX += vx * dtSeconds;
+  for (const obs of obstacles) {
+    const pMinX = newX - halfSize;
+    const pMaxX = newX + halfSize;
+    const pMinY = currentPos.y - halfSize;
+    const pMaxY = currentPos.y + halfSize;
+
+    if (pMaxX > obs.minX && pMinX < obs.maxX && pMaxY > obs.minY && pMinY < obs.maxY) {
+      collidedX = true;
+      if (vx > 0) {
+        newX = obs.minX - halfSize;
+      } else if (vx < 0) {
+        newX = obs.maxX + halfSize;
+      }
+    }
+  }
+
+  // 2. Vertical movement and separation
+  newY += vy * dtSeconds;
+  for (const obs of obstacles) {
+    const pMinX = newX - halfSize;
+    const pMaxX = newX + halfSize;
+    const pMinY = newY - halfSize;
+    const pMaxY = newY + halfSize;
+
+    if (pMaxX > obs.minX && pMinX < obs.maxX && pMaxY > obs.minY && pMinY < obs.maxY) {
+      collidedY = true;
+      if (vy > 0) {
+        newY = obs.minY - halfSize;
+      } else if (vy < 0) {
+        newY = obs.maxY + halfSize;
+      }
+    }
+  }
+
+  return { x: newX, y: newY, collidedX, collidedY };
+}
 
 class SimulatedTundeRoutine {
   public static readonly HOME_POS = { x: 440, y: 210 } as const;
@@ -443,6 +525,182 @@ describe('Tunde Bello Workplace Movement Routine (IT Department)', () => {
       assert.ok(source.includes('const tundePos = this.getTundePosition()'), 'Proximity check uses getTundePosition');
       assert.ok(source.includes('pauseTundeRoutine()'), 'setMovementLocked pauses routine');
       assert.ok(source.includes('resumeTundeRoutine()'), 'setMovementLocked resumes routine');
+
+      // Northern Playable Area Boundary Obstacles
+      assert.ok(source.includes('createObstacle(800, 185, 500, 30'), 'Declares Lobby Corridor North Wall');
+      assert.ok(source.includes('createObstacle(442.5, 175, 215, 30'), 'Declares IT North Wall Aisle');
+      assert.ok(source.includes('createObstacle(178.5, 160, 93, 30'), 'Declares IT North Wall Rack');
+      assert.ok(source.includes('createObstacle(76, 160, 112, 30'), 'Declares IT North Wall West Rack');
+      assert.ok(source.includes('createObstacle(1319, 175, 538, 30'), 'Declares HR North Wall');
+    });
+  });
+
+  describe('Office Boundary Movement & Collision Recovery (IT/Lobby Boundary)', () => {
+    const SPEED = 220; // Player speed in pixels per second
+    const DT = 0.016;  // ~60 FPS time step (16ms)
+    const MAX_HUD_HEIGHT = 110; // Maximum HUD height on desktop and mobile viewports
+
+    it('verifies movement from lobby spawn (800, 420) toward IT funnels smoothly through doorway without entering occluded HUD zone', () => {
+      let pos = { x: 800, y: 420 };
+      const path: Array<{ x: number; y: number }> = [{ ...pos }];
+
+      // Player holds Up-Left toward IT (dx = -1, dy = -1) for 150 frames (~2.4s)
+      for (let step = 0; step < 150; step++) {
+        const result = simulatePlayerMovementStep(pos, -1, -1, SPEED, DT, ALL_OFFICE_OBSTACLES);
+        pos = { x: result.x, y: result.y };
+        path.push({ ...pos });
+      }
+
+      // 1. Vertical boundary enforcement: Amaka can never penetrate north of corridor or suite boundaries
+      for (const p of path) {
+        if (p.x >= 550) {
+          assert.ok(
+            p.y >= 215 - 0.001,
+            `In corridor, player y=${p.y} penetrated north of corridor boundary (minimum allowed y=215)`
+          );
+        } else {
+          assert.ok(
+            p.y >= 205 - 0.001,
+            `In IT department, player y=${p.y} penetrated north of IT suite boundary (minimum allowed y=205)`
+          );
+        }
+
+        // 2. HUD topbar clearance: Name tag (p.y - 62, top at p.y - 72) must remain below HUD topbar at all times
+        const tagTopY = p.y - 72;
+        assert.ok(
+          tagTopY >= MAX_HUD_HEIGHT,
+          `Player overhead UI at y=${tagTopY} is occluded underneath navigation bar (${MAX_HUD_HEIGHT}px)`
+        );
+      }
+
+      // 3. Smooth sliding: Amaka slides west along corridor, crosses doorway (x=550) into IT suite (x < 550)
+      assert.ok(pos.x < 550, `Player at x=${pos.x} did not enter IT department through doorway at x=550`);
+      assert.ok(pos.y <= 220, `Player at y=${pos.y} remained in the walkable aisle height`);
+
+      // 4. Proximity to Tunde Bello (440, 210) is achieved
+      const distToTunde = Math.hypot(pos.x - 440, pos.y - 210);
+      assert.ok(
+        distToTunde <= 115,
+        `Player at (${pos.x}, ${pos.y}) is within interaction distance of Tunde Bello (dist=${distToTunde} <= 115)`
+      );
+    });
+
+    it('verifies boundary collision recovery: player pressed against north wall recovers cleanly in all directions', () => {
+      // Position player directly against the corridor boundary wall (y=215, wall maxY=200)
+      const againstWall = { x: 700, y: 215 };
+
+      // Recovery 1: Pressing Down (S / Down Arrow) immediately moves south away from the wall
+      let posDown = { ...againstWall };
+      for (let i = 0; i < 10; i++) {
+        const res = simulatePlayerMovementStep(posDown, 0, 1, SPEED, DT, ALL_OFFICE_OBSTACLES);
+        posDown = { x: res.x, y: res.y };
+      }
+      assert.ok(posDown.y > 215, `Player did not recover south: y=${posDown.y} <= 215`);
+      assert.ok(posDown.y >= 240, `Player did not advance south sufficiently: y=${posDown.y}`);
+
+      // Recovery 2: Pressing Right (D / Right Arrow) slides eastward along the wall without snagging
+      let posRight = { ...againstWall };
+      for (let i = 0; i < 10; i++) {
+        const res = simulatePlayerMovementStep(posRight, 1, 0, SPEED, DT, ALL_OFFICE_OBSTACLES);
+        posRight = { x: res.x, y: res.y };
+      }
+      assert.equal(Math.round(posRight.y), 215, 'Player y remained steady against the wall');
+      assert.ok(posRight.x > 700, `Player did not slide east: x=${posRight.x} <= 700`);
+
+      // Recovery 3: Pressing Left (A / Left Arrow) slides westward along the wall toward IT
+      let posLeft = { ...againstWall };
+      for (let i = 0; i < 10; i++) {
+        const res = simulatePlayerMovementStep(posLeft, -1, 0, SPEED, DT, ALL_OFFICE_OBSTACLES);
+        posLeft = { x: res.x, y: res.y };
+      }
+      assert.equal(Math.round(posLeft.y), 215, 'Player y remained steady against the wall');
+      assert.ok(posLeft.x < 700, `Player did not slide west: x=${posLeft.x} >= 700`);
+
+      // Recovery 4: Opposing inputs (holding Up then immediately holding Down) does not stick or lock velocity
+      let posBounce = { ...againstWall };
+      // Push against wall for 5 frames
+      for (let i = 0; i < 5; i++) {
+        const res = simulatePlayerMovementStep(posBounce, 0, -1, SPEED, DT, ALL_OFFICE_OBSTACLES);
+        posBounce = { x: res.x, y: res.y };
+      }
+      assert.equal(Math.round(posBounce.y), 215, 'Held against wall at y=215');
+      // Immediately reverse direction to Down
+      const reverseRes = simulatePlayerMovementStep(posBounce, 0, 1, SPEED, DT, ALL_OFFICE_OBSTACLES);
+      assert.ok(reverseRes.y > 215, 'Reversed immediately on the very first frame without sticking');
+    });
+
+    it('verifies IT suite northern boundary prevents walking north of Tunde or into out-of-bounds space behind furniture', () => {
+      // Amaka standing in front of Tunde at (440, 210)
+      let pos = { x: 440, y: 210 };
+
+      // Hold Up toward the north wall of IT
+      for (let i = 0; i < 20; i++) {
+        const res = simulatePlayerMovementStep(pos, 0, -1, SPEED, DT, ALL_OFFICE_OBSTACLES);
+        pos = { x: res.x, y: res.y };
+      }
+
+      // Stopped at y=205 (IT North Wall Aisle maxY=190 + halfSize=15)
+      assert.equal(Math.round(pos.y), 205, 'Player stopped cleanly at y=205 by IT north partition');
+      assert.ok(pos.y >= 205, 'Player cannot penetrate north of y=205 in IT');
+
+      // Overhead tag top at y=205 - 72 = 133 is strictly below HUD topbar (110px)
+      assert.ok(pos.y - 72 >= MAX_HUD_HEIGHT, 'Player remains visible below HUD even when pushing north in IT');
+
+      // Immediate recovery south toward IT ops console (440, 270)
+      for (let i = 0; i < 20; i++) {
+        const res = simulatePlayerMovementStep(pos, 0, 1, SPEED, DT, ALL_OFFICE_OBSTACLES);
+        pos = { x: res.x, y: res.y };
+      }
+      assert.ok(pos.y >= 230, `Player recovered south toward console: y=${pos.y}`);
+    });
+
+    it('verifies continuous northern boundary protection across the entire world width (x=0..1600)', () => {
+      // Sample test points every 50px across the entire office world at y=215
+      for (let x = 50; x <= 1550; x += 50) {
+        // Verify that a player moving north from y=215 over 50 frames cannot penetrate into the occluded zone (y < 190)
+        let testPos = { x, y: 215 };
+        for (let step = 0; step < 50; step++) {
+          const res = simulatePlayerMovementStep(testPos, 0, -1, SPEED, DT, ALL_OFFICE_OBSTACLES);
+          testPos = { x: res.x, y: res.y };
+        }
+        assert.ok(
+          testPos.y >= 190 - 0.001,
+          `At x=${x}, player was able to penetrate north to y=${testPos.y} (must be blocked at y >= 190)`
+        );
+      }
+    });
+
+    it('verifies all department interaction points remain 100% accessible and collision-free', () => {
+      const halfSize = 15;
+      const verifyPointAccessible = (x: number, y: number, name: string) => {
+        const pMinX = x - halfSize;
+        const pMaxX = x + halfSize;
+        const pMinY = y - halfSize;
+        const pMaxY = y + halfSize;
+
+        for (const obs of ALL_OFFICE_OBSTACLES) {
+          const overlap = pMaxX > obs.minX && pMinX < obs.maxX && pMaxY > obs.minY && pMinY < obs.maxY;
+          assert.ok(!overlap, `Interaction access point "${name}" at (${x}, ${y}) overlaps obstacle ${obs.name}`);
+        }
+      };
+
+      // 1. Tunde Bello consultation positions
+      verifyPointAccessible(440, 210, 'Tunde Home Position');
+      verifyPointAccessible(370, 210, 'Tunde Secondary Position');
+
+      // 2. Incident Workstation Beacon consultation position (IT)
+      // Player stands adjacent to workstation at (280, 360) (beacon is at 280, 332, radius=95)
+      verifyPointAccessible(280, 365, 'IT Incident Workstation Player Stand');
+      const distToWorkstation = Math.hypot(280 - 280, 365 - 332);
+      assert.ok(distToWorkstation <= 95, `Player at (280, 365) is within 95px radius of workstation beacon`);
+
+      // 3. Lobby corridor signage & spawn point
+      verifyPointAccessible(800, 420, 'Lobby Player Spawn');
+      verifyPointAccessible(800, 235, 'Corridor Signage Stand');
+
+      // 4. IT and HR Doorway centers
+      verifyPointAccessible(550, 270, 'IT Doorway Center');
+      verifyPointAccessible(1050, 270, 'HR Doorway Center');
     });
   });
 });
