@@ -35,8 +35,11 @@ import {
   getOpeningOption,
   getFollowupExchange,
   getPhishingOutcomeConversation,
+  answerTundeQuestion,
   type PhishingOpeningOptionId,
+  type PhishingQuestionCategory,
 } from './phishingDialogue.ts';
+import { CandidateKnowledgeTracker } from '../knowledge/candidateKnowledge.ts';
 
 export interface UIManagerCallbacks {
   readonly onSelectChoice: (choiceId: string, additionalInstructions?: string) => void;
@@ -82,6 +85,15 @@ export class UIManager {
   private isCommsDrawerOpen: boolean = false;
   private unreadCommsCount: number = 0;
 
+  // Persistent Metric Changes Tracking
+  private lastProcessedLedgerLength: number = 0;
+  private activeMetricDeltas: {
+    cashDelta?: number;
+    itDelta?: number;
+    hrDelta?: number;
+  } | null = null;
+  private deltaTimer?: ReturnType<typeof setTimeout>;
+
   // Active Incident context
   private activeIncident: Incident | null = null;
   private activeChoices: readonly EvaluatedChoice[] = [];
@@ -105,6 +117,33 @@ export class UIManager {
     return this.mobileControls;
   }
 
+  private readonly candidateTrackers: Map<string, CandidateKnowledgeTracker> = new Map([
+    ['INC_MAIL_FIRS', new CandidateKnowledgeTracker('INC_MAIL_FIRS')],
+  ]);
+
+  public get candidateKnowledge(): CandidateKnowledgeTracker {
+    return this.getCandidateKnowledge(this.activeIncident?.id ?? 'INC_MAIL_FIRS');
+  }
+
+  public getCandidateKnowledge(incidentId: string = 'INC_MAIL_FIRS'): CandidateKnowledgeTracker {
+    let tracker = this.candidateTrackers.get(incidentId);
+    if (!tracker) {
+      tracker = new CandidateKnowledgeTracker(incidentId);
+      this.candidateTrackers.set(incidentId, tracker);
+    }
+    return tracker;
+  }
+
+  public resetCandidateKnowledge(incidentId?: string): void {
+    if (incidentId) {
+      this.candidateTrackers.get(incidentId)?.reset();
+    } else {
+      for (const tracker of this.candidateTrackers.values()) {
+        tracker.reset();
+      }
+    }
+  }
+
   private phishingIncidentId?: string;
   private phishingState: {
     linkOpened: boolean;
@@ -116,6 +155,17 @@ export class UIManager {
     dialogueStep?: 'opening' | 'amaka_line' | 'tunde_reply';
     followupStep?: 'tunde_brief' | 'amaka_reply' | 'tunde_closing';
     introCompleted?: boolean;
+    candidateKnowledge?: CandidateKnowledgeTracker;
+    recentQuestion?: {
+      question: string;
+      answer: string;
+      category: PhishingQuestionCategory;
+    };
+    conversationLog?: Array<{
+      question: string;
+      answer: string;
+      category: PhishingQuestionCategory;
+    }>;
   } | null = null;
 
   public getPhishingInteractionState(): {
@@ -128,6 +178,17 @@ export class UIManager {
     dialogueStep?: 'opening' | 'amaka_line' | 'tunde_reply';
     followupStep?: 'tunde_brief' | 'amaka_reply' | 'tunde_closing';
     introCompleted?: boolean;
+    candidateKnowledge?: CandidateKnowledgeTracker;
+    recentQuestion?: {
+      question: string;
+      answer: string;
+      category: PhishingQuestionCategory;
+    };
+    conversationLog?: Array<{
+      question: string;
+      answer: string;
+      category: PhishingQuestionCategory;
+    }>;
   } | null {
     return this.phishingState;
   }
@@ -196,7 +257,28 @@ export class UIManager {
    * Updates the executive HUD with latest state from the simulation engine.
    */
   public updateHUD(state: SimulationState): void {
-    const { financials, metrics, currentTurn, totalTurns, phase, isInsolvent } = state;
+    const { financials, metrics, currentTurn, totalTurns, phase, isInsolvent, decisionLedger } = state;
+
+    // Check if a new decision was logged to briefly highlight metric changes using existing simulation data
+    const ledger = decisionLedger || [];
+    if (ledger.length > this.lastProcessedLedgerLength) {
+      this.lastProcessedLedgerLength = ledger.length;
+      const latest = ledger[ledger.length - 1];
+      this.activeMetricDeltas = {
+        cashDelta: latest.immediateFinancialDeltas.cashDelta,
+        itDelta: latest.immediateMetricDeltas.itDelta,
+        hrDelta: latest.immediateMetricDeltas.hrDelta,
+      };
+      if (this.deltaTimer) {
+        clearTimeout(this.deltaTimer);
+      }
+      this.deltaTimer = setTimeout(() => {
+        this.activeMetricDeltas = null;
+      }, 6000);
+    } else if (ledger.length === 0) {
+      this.lastProcessedLedgerLength = 0;
+      this.activeMetricDeltas = null;
+    }
 
     const cashFormatted = this.formatCurrency(financials.cash);
     const debtFormatted = this.formatCurrency(financials.debtService.postPaymentPrincipal);
@@ -217,6 +299,29 @@ export class UIManager {
         ? `<span class="comms-unread-pill">${this.unreadCommsCount} NEW</span>`
         : '';
 
+    const wasFinanceOpen =
+      this.hudElement?.querySelector<HTMLDetailsElement>('#hud-finance-drawer')?.open ?? false;
+
+    // Delta badges for metric changes
+    const cashDelta = this.activeMetricDeltas?.cashDelta;
+    const itDelta = this.activeMetricDeltas?.itDelta;
+    const hrDelta = this.activeMetricDeltas?.hrDelta;
+
+    const cashDeltaBadge =
+      cashDelta !== undefined && cashDelta !== 0
+        ? `<span class="hud-delta-pill ${cashDelta < 0 ? 'neg' : 'pos'}">${this.formatCurrencyDelta(cashDelta)}</span>`
+        : '';
+
+    const itDeltaBadge =
+      itDelta !== undefined && itDelta !== 0
+        ? `<span class="hud-delta-pill ${itDelta < 0 ? 'neg' : 'pos'}">${itDelta > 0 ? '+' : ''}${itDelta}</span>`
+        : '';
+
+    const hrDeltaBadge =
+      hrDelta !== undefined && hrDelta !== 0
+        ? `<span class="hud-delta-pill ${hrDelta < 0 ? 'neg' : 'pos'}">${hrDelta > 0 ? '+' : ''}${hrDelta}</span>`
+        : '';
+
     this.hudElement.innerHTML = `
       <div class="hud-left">
         <div class="hud-brand">
@@ -233,43 +338,59 @@ export class UIManager {
         </div>
       </div>
 
-      <div class="hud-center">
-        <div class="metric-card ${financials.cash < 0 ? 'critical' : ''}">
-          <span class="label">CASH RESERVES</span>
+      <!-- 3 Primary Metrics: Cash Reserves, IT Stability, HR Morale -->
+      <div class="hud-center hud-primary-metrics">
+        <div class="metric-card primary cash-card ${financials.cash < 0 ? 'critical' : ''}">
+          <div class="metric-card-header">
+            <span class="label">CASH RESERVES</span>
+            ${cashDeltaBadge}
+          </div>
           <span class="value">${cashFormatted}</span>
         </div>
-        <div class="metric-card ${financials.debtService.hasActiveDebt ? 'warning' : ''}">
-          <span class="label">DEBT PRINCIPAL</span>
-          <span class="value">${debtFormatted}</span>
+
+        <div class="metric-card primary it-card ${metrics.itStability < 35 ? 'critical' : metrics.itStability < 60 ? 'warning' : ''}">
+          <div class="metric-card-header">
+            <span class="label">IT STABILITY</span>
+            ${itDeltaBadge}
+          </div>
+          <span class="value"><span class="score-val">${metrics.itStability}</span><span class="score-max">/100</span></span>
         </div>
-        <div class="metric-card">
-          <span class="label">NET MONTHLY BURN</span>
-          <span class="value">${netBurnFormatted}/mo</span>
-        </div>
-        <div class="metric-card ${financials.effectiveRunwayMonths < 6 ? 'critical' : financials.effectiveRunwayMonths < 12 ? 'warning' : ''}">
-          <span class="label">EST. RUNWAY</span>
-          <span class="value">${runwayFormatted}</span>
+
+        <div class="metric-card primary hr-card ${metrics.hrMorale < 35 ? 'critical' : metrics.hrMorale < 60 ? 'warning' : ''}">
+          <div class="metric-card-header">
+            <span class="label">HR MORALE</span>
+            ${hrDeltaBadge}
+          </div>
+          <span class="value"><span class="score-val">${metrics.hrMorale}</span><span class="score-max">/100</span></span>
         </div>
       </div>
 
+      <!-- Right: Optional Expandable Financial Details & Company Performance Grade -->
       <div class="hud-right">
-        <div class="pillars-group">
-          <div class="pillar-pill it" title="IT Platform Stability (0-100)">
-            <span class="pillar-icon">💻 IT Stability</span>
-            <span class="pillar-val">${metrics.itStability}</span>
+        <details class="hud-finance-expandable" id="hud-finance-drawer" ${wasFinanceOpen ? 'open' : ''}>
+          <summary class="hud-finance-toggle" title="View Debt Principal, Monthly Burn & Estimated Runway">
+            <span class="toggle-icon">📊</span>
+            <span class="toggle-label">Treasury Details</span>
+            <span class="toggle-chevron">▾</span>
+          </summary>
+          <div class="hud-finance-dropdown">
+            <div class="metric-card secondary debt-card ${financials.debtService.hasActiveDebt ? 'warning' : ''}">
+              <span class="label">DEBT PRINCIPAL</span>
+              <span class="value">${debtFormatted}</span>
+            </div>
+            <div class="metric-card secondary burn-card">
+              <span class="label">NET MONTHLY BURN</span>
+              <span class="value">${netBurnFormatted}/mo</span>
+            </div>
+            <div class="metric-card secondary runway-card ${financials.effectiveRunwayMonths < 6 ? 'critical' : financials.effectiveRunwayMonths < 12 ? 'warning' : ''}">
+              <span class="label">EST. RUNWAY</span>
+              <span class="value">${runwayFormatted}</span>
+            </div>
           </div>
-          <div class="pillar-pill hr" title="Human Resources Morale (0-100)">
-            <span class="pillar-icon">👥 HR Morale</span>
-            <span class="pillar-val">${metrics.hrMorale}</span>
-          </div>
-          <div class="pillar-pill fin" title="Treasury Financial Health (0-100)">
-            <span class="pillar-icon">📊 Finance Health</span>
-            <span class="pillar-val">${financials.roundedFinancialHealth}</span>
-          </div>
-        </div>
+        </details>
 
-        <div class="overall-badge" style="border-color: ${gradeColor}">
-          <div class="health-num" title="Overall Company Health">${metrics.overallHealthScore}</div>
+        <div class="overall-badge" style="border-color: ${gradeColor}" title="Overall Company Health (${metrics.overallHealthScore}/100) & Grade">
+          <div class="health-num">${metrics.overallHealthScore}</div>
           <div class="grade-badge" style="background-color: ${gradeColor}">${metrics.grade}</div>
         </div>
       </div>
@@ -774,6 +895,11 @@ export class UIManager {
    * taken from the simulation ledger and the departmental memos.
    */
   public showIncidentOutcome(props: OutcomeViewProps): void {
+    if (this.activeIncident?.id) {
+      this.getCandidateKnowledge(this.activeIncident.id).recordDiscovery('OUTCOME_DEBRIEF');
+    } else if (this.phishingIncidentId) {
+      this.getCandidateKnowledge(this.phishingIncidentId).recordDiscovery('OUTCOME_DEBRIEF');
+    }
     this.releaseTextFocus();
     this.workbench?.destroy();
     this.workbench = undefined;
@@ -846,7 +972,10 @@ export class UIManager {
         isSenderInspected: false,
         isLinkInspected: false,
         selectedAction: 'action_report',
+        candidateKnowledge: this.candidateKnowledge,
       };
+    } else {
+      this.phishingState.candidateKnowledge = this.candidateKnowledge;
     }
 
     if (this.escapeKeyListener) {
@@ -873,6 +1002,7 @@ export class UIManager {
 
     const renderDeskConversation = () => {
       this.modalContainer.className = 'modal-backdrop is-desk-overlay';
+      this.candidateKnowledge.recordDiscovery('ASK_TUNDE_DESK');
 
       const isIntroDone = !!this.phishingState?.introCompleted;
       const selectedOptionId = this.phishingState?.openingResponse;
@@ -912,6 +1042,7 @@ export class UIManager {
           // 'tunde_brief'
           spokenDialogue = exchange.tundeLine;
           showContinueBtn = true;
+          this.candidateKnowledge.recordDiscovery('FINANCE_FOLLOWUP_CALL');
         }
       } else if (!selectedOption || currentStep === 'opening') {
         // Step 1: Tunde speaks opening prompt; Amaka needs to choose
@@ -954,10 +1085,27 @@ export class UIManager {
                 ${activeSpeakerName} · ${activeSpeakerRole}
               </div>
 
-              <div class="cinematic-speech-bubble">
-                <div class="speech-tail"></div>
-                <p class="cinematic-speech-text">“${spokenDialogue}”</p>
-              </div>
+              ${
+                this.phishingState?.recentQuestion
+                  ? `
+                <div class="cinematic-speech-thread">
+                  <div class="thread-bubble candidate-bubble">
+                    <div class="thread-speaker amaka-tag">Amaka Obi · CCO</div>
+                    <p class="thread-text">“${this.phishingState.recentQuestion.question}”</p>
+                  </div>
+                  <div class="thread-bubble tunde-bubble">
+                    <div class="thread-speaker tunde-tag">Tunde Bello · Head of IT</div>
+                    <p class="thread-text">“${this.phishingState.recentQuestion.answer}”</p>
+                  </div>
+                </div>
+              `
+                  : `
+                <div class="cinematic-speech-bubble">
+                  <div class="speech-tail"></div>
+                  <p class="cinematic-speech-text">“${spokenDialogue}”</p>
+                </div>
+              `
+              }
 
               ${
                 showChoices
@@ -976,6 +1124,26 @@ export class UIManager {
                   : ''
               }
 
+              <!-- Compact, Mobile-Responsive Question Input -->
+              <div class="cinematic-ask-bar">
+                <form id="form-ask-tunde" class="ask-tunde-form" autocomplete="off">
+                  <div class="ask-tunde-input-wrap">
+                    <span class="ask-icon">💬</span>
+                    <input
+                      type="text"
+                      id="input-ask-tunde"
+                      class="ask-tunde-input"
+                      placeholder="Ask Tunde a question (e.g. 'What did Yusuf do?', 'Is it authentic?')..."
+                      maxlength="250"
+                      autocomplete="off"
+                    />
+                    <button type="submit" id="btn-submit-question" class="btn-ask-submit">
+                      Ask
+                    </button>
+                  </div>
+                </form>
+              </div>
+
               <div class="cinematic-actions-row">
                 ${
                   showContinueBtn
@@ -986,7 +1154,7 @@ export class UIManager {
                 `
                     : ''
                 }
-                <button type="button" id="btn-open-workstation" class="btn ${isFinalReply ? 'btn-primary' : 'btn-secondary'} btn-sm">
+                <button type="button" id="btn-open-workstation" class="btn ${isFinalReply || this.phishingState?.recentQuestion ? 'btn-primary' : 'btn-secondary'} btn-sm">
                   <span>${actionLabel}</span>
                 </button>
                 <button type="button" id="btn-desk-step-away" class="btn btn-secondary btn-sm">
@@ -1015,6 +1183,7 @@ export class UIManager {
             this.phishingState.openingResponse = 'examine_first';
           }
         }
+        this.candidateKnowledge.recordDiscovery('ASK_TUNDE_DESK');
         this.callbacks.onTundeIntroCompleted?.();
         renderWorkstation();
       });
@@ -1037,11 +1206,35 @@ export class UIManager {
         }
       });
 
+      // Wire Ask Tunde Form
+      const askForm = this.modalContainer.querySelector<HTMLFormElement>('#form-ask-tunde');
+      const askInput = this.modalContainer.querySelector<HTMLInputElement>('#input-ask-tunde');
+
+      askForm?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const query = askInput?.value?.trim();
+        if (!query || !this.phishingState) return;
+
+        const answer = answerTundeQuestion(query, this.phishingState);
+        this.phishingState.recentQuestion = {
+          question: query,
+          answer: answer.response,
+          category: answer.category,
+        };
+        if (!this.phishingState.conversationLog) {
+          this.phishingState.conversationLog = [];
+        }
+        this.phishingState.conversationLog.push(this.phishingState.recentQuestion);
+
+        renderDeskConversation();
+      });
+
       const choiceButtons = this.modalContainer.querySelectorAll<HTMLButtonElement>('.dialogue-choice-btn');
       choiceButtons.forEach((btn) => {
         btn.addEventListener('click', () => {
           const optId = (btn.value || btn.dataset?.optionId || btn.getAttribute?.('data-option-id')) as PhishingOpeningOptionId;
           if (this.phishingState && optId) {
+            this.phishingState.recentQuestion = undefined;
             this.phishingState.openingResponse = optId;
             this.phishingState.dialogueStep = 'amaka_line';
             renderDeskConversation();
@@ -1222,6 +1415,7 @@ export class UIManager {
       };
       backToDeskBtn?.addEventListener('click', () => {
         if (this.phishingState) {
+          this.phishingState.recentQuestion = undefined;
           this.phishingState.followupStep = 'tunde_brief';
         }
         renderDeskConversation();
@@ -1367,7 +1561,7 @@ export class UIManager {
                 </div>
                 <div class="cost-badge">Standard IT Triage</div>
               </div>
-              <p class="choice-desc">Alert Tunde to block firs-gov.com.ng on the mail gateway and reset Yusuf's compromised account.</p>
+              <p class="choice-desc">Alert Tunde to block firs-gov.com.ng on the mail gateway and coordinate enterprise containment.</p>
             </label>
             <label id="card-action-delete" class="choice-workbench-card ${isDelete ? 'selected' : ''}">
               <div class="choice-selection-row">
@@ -1377,7 +1571,7 @@ export class UIManager {
                 </div>
                 <div class="cost-badge">Unescalated Risk</div>
               </div>
-              <p class="choice-desc">Delete from your inbox without alerting IT. Leaves colleagues exposed to identical emails and Yusuf's account uncontained.</p>
+              <p class="choice-desc">Delete from your inbox without alerting IT. Leaves colleagues exposed to identical emails and uncontained account risks.</p>
             </label>
           `;
         }
@@ -1410,6 +1604,7 @@ export class UIManager {
         if (this.phishingState.isSenderInspected) {
           inspectionDrawer?.classList.remove('hidden');
           inspectBtn.textContent = 'Hide sender details';
+          this.candidateKnowledge.recordDiscovery('INSPECT_EMAIL_HEADER');
         } else {
           inspectionDrawer?.classList.add('hidden');
           inspectBtn.textContent = 'Inspect sender';
@@ -1424,6 +1619,7 @@ export class UIManager {
         if (this.phishingState.isLinkInspected) {
           linkDrawer?.classList.remove('hidden');
           checkLinkBtn.textContent = 'Hide link details';
+          this.candidateKnowledge.recordDiscovery('INSPECT_LINK_TARGET');
         } else {
           linkDrawer?.classList.add('hidden');
           checkLinkBtn.textContent = 'Check link';
@@ -1436,6 +1632,7 @@ export class UIManager {
         e.preventDefault();
         if (!this.phishingState) return;
         this.phishingState.linkOpened = true;
+        this.candidateKnowledge.recordDiscovery('SIMULATE_PORTAL_VISIT');
         simulatedBrowser?.classList.remove('hidden');
         updateEvidenceTray();
         updateStatusView();
@@ -1462,6 +1659,7 @@ export class UIManager {
         this.phishingState.linkOpened = true;
         this.phishingState.credentialsSubmitted = true;
         this.phishingState.selectedAction = 'action_contain';
+        this.candidateKnowledge.recordDiscovery('SUBMIT_PORTAL_CREDENTIALS');
         simulatedBrowser?.classList.add('hidden');
         updateEvidenceTray();
         updateStatusView();
@@ -1538,6 +1736,13 @@ export class UIManager {
     this.activeIncident = incident;
     this.activeChoices = choices;
     this.answeredQuestions.clear();
+
+    const tracker = this.getCandidateKnowledge(incident.id);
+    tracker.recordDiscovery('STARTING_CONTEXT');
+    if (incident.artifact) {
+      tracker.recordDiscovery('READ_INCIDENT_ARTIFACT');
+    }
+
     this.selectedStrategyId =
       choices.find((c) => !c.isLocked && c.isDefault)?.id ??
       choices.find((c) => !c.isLocked)?.id ??
@@ -1692,6 +1897,14 @@ export class UIManager {
       });
     });
 
+    // Wire alsoPresent voice follow-up details toggle
+    const followupDetails = this.modalContainer.querySelector<HTMLDetailsElement>('.voice-followup');
+    followupDetails?.addEventListener('toggle', () => {
+      if (followupDetails.open) {
+        tracker.recordDiscovery('ASK_INCIDENT_INTERVIEW');
+      }
+    });
+
     // 2. Wire Strategy Radio Selection
     const strategyRadios = this.modalContainer.querySelectorAll<HTMLInputElement>(
       'input[name="executive_strategy"]'
@@ -1843,31 +2056,58 @@ export class UIManager {
       record.chosenOptionId.startsWith('CHOICE_PHISH_') ||
       record.chosenOptionId.startsWith('CHOICE_MAIL_');
 
+    if (record.incidentId) {
+      this.getCandidateKnowledge(record.incidentId).recordDiscovery('OUTCOME_DEBRIEF');
+    } else if (isPhishing) {
+      this.getCandidateKnowledge('INC_MAIL_FIRS').recordDiscovery('OUTCOME_DEBRIEF');
+    }
+
+    this.modalContainer.className = 'modal-backdrop is-resolution-overlay';
+
+    const continueBtnText = isPhishing
+      ? 'Return to office'
+      : isCompleted
+      ? 'View Performance Debrief'
+      : 'Proceed to Next Turn';
+
+    const outcomeDialogue = isPhishing ? getPhishingOutcomeConversation(record.chosenOptionId) : null;
+
+    const cashDelta = record.immediateFinancialDeltas.cashDelta;
+    const itDelta = record.immediateMetricDeltas.itDelta;
+    const hrDelta = record.immediateMetricDeltas.hrDelta;
+
+    const cashClass = cashDelta < 0 ? 'impact-neg' : cashDelta > 0 ? 'impact-pos' : 'impact-neutral';
+    const itClass = itDelta < 0 ? 'impact-neg' : itDelta > 0 ? 'impact-pos' : 'impact-neutral';
+    const hrClass = hrDelta < 0 ? 'impact-neg' : hrDelta > 0 ? 'impact-pos' : 'impact-neutral';
+
     const scheduledHtml =
       record.delayedEffectsScheduled.length > 0
-        ? `<div class="resolution-alert scheduled">
-            <h4>⚠️ Latent Risk Scheduled</h4>
-            ${record.delayedEffectsScheduled
-              .map(
-                (s: { readonly triggerTurn: number; readonly description: string }) =>
-                  `<p>• <strong>Turn ${s.triggerTurn}:</strong> ${s.description}</p>`
-              )
-              .join('')}
+        ? `<div class="compact-risk-pill scheduled">
+            <span class="risk-icon">⚠️</span>
+            <div class="risk-content">
+              <strong>Pending Risk (Turn ${record.delayedEffectsScheduled[0].triggerTurn}):</strong>
+              ${record.delayedEffectsScheduled
+                .map((s: { readonly triggerTurn: number; readonly description: string }) => s.description)
+                .join(' ')}
+            </div>
           </div>`
         : '';
 
     const resolvedHtml =
       record.delayedEffectsResolvedThisTurn.length > 0
-        ? `<div class="resolution-alert resolved">
-            <h4>💥 Past Consequence Came Due This Month</h4>
-            ${record.delayedEffectsResolvedThisTurn
-              .map(
-                (r: DelayedEffectResolution) =>
-                  `<p>• ${r.narrativeDescription} (${this.formatCurrencyDelta(
-                    r.appliedDeltas.cashDelta
-                  )}, IT ${r.appliedDeltas.itDelta > 0 ? '+' : ''}${r.appliedDeltas.itDelta})</p>`
-              )
-              .join('')}
+        ? `<div class="compact-risk-pill resolved">
+            <span class="risk-icon">💥</span>
+            <div class="risk-content">
+              <strong>Past Consequence Came Due:</strong>
+              ${record.delayedEffectsResolvedThisTurn
+                .map(
+                  (r: DelayedEffectResolution) =>
+                    `${r.narrativeDescription} (${this.formatCurrencyDelta(
+                      r.appliedDeltas.cashDelta
+                    )}, IT ${r.appliedDeltas.itDelta > 0 ? '+' : ''}${r.appliedDeltas.itDelta})`
+                )
+                .join(' ')}
+            </div>
           </div>`
         : '';
 
@@ -1881,7 +2121,7 @@ export class UIManager {
       crossReactionsList.length > 0
         ? `
       <div class="resolution-reactions-list">
-        <h4 class="reactions-header">🏢 Cross-Department Immediate Reactions</h4>
+        <h4 class="reactions-header">🏢 Department Feedback</h4>
         ${crossReactionsList
           .map(
             (r) => `
@@ -1900,99 +2140,115 @@ export class UIManager {
     `
         : '';
 
-    const continueBtnText = isPhishing
-      ? 'Return to office'
-      : isCompleted
-      ? 'View Performance Debrief'
-      : 'Proceed to Next Turn';
-
-    const outcomeDialogue = isPhishing ? getPhishingOutcomeConversation(record.chosenOptionId) : null;
-
     this.modalContainer.innerHTML = `
       <div class="modal-dialog resolution-dialog">
         <div class="modal-header">
-          <div class="dept-indicator">Turn ${record.turn} Implementation Aftermath</div>
+          <div class="dept-indicator">Turn ${record.turn} Incident Outcome</div>
           <h2 class="incident-title">${record.chosenOptionLabel}</h2>
         </div>
 
         <div class="modal-body">
-          <div class="resolution-summary">
-            <p>${record.effectiveChoiceImpact.operationalExplanation}</p>
+          <!-- 1. Concise Summary of Action & Immediate Consequence -->
+          <div class="outcome-action-summary">
+            <span class="outcome-summary-badge">Immediate Consequence</span>
+            <p class="outcome-summary-text">${record.effectiveChoiceImpact.operationalExplanation}</p>
           </div>
 
+          <!-- 2. One Short Natural Response from Tunde -->
           ${
             outcomeDialogue
               ? `
-          <div class="resolution-outcome-dialogue">
-            <div class="resolution-outcome-title">
-              <span>🛡️ Post-Incident Debrief: ${outcomeDialogue.title}</span>
-            </div>
-            <div class="outcome-dialogue-card tunde">
-              <div class="outcome-speaker-tag">Tunde Bello · Head of IT</div>
-              <p class="outcome-quote">“${outcomeDialogue.tundeLine}”</p>
-            </div>
-            <div class="outcome-dialogue-card amaka">
-              <div class="outcome-speaker-tag">Amaka Obi · Chief Compliance Officer</div>
-              <p class="outcome-quote">“${outcomeDialogue.amakaLine}”</p>
+          <div class="outcome-tunde-quote-card resolution-outcome-dialogue">
+            <div class="tunde-quote-avatar">TB</div>
+            <div class="tunde-quote-body">
+              <span class="tunde-quote-speaker">Tunde Bello · Head of IT</span>
+              <p class="tunde-quote-text">“${outcomeDialogue.tundeLine}”</p>
             </div>
           </div>
           `
               : ''
           }
 
-          <div class="stat-deltas-grid">
-            <div class="delta-card">
-              <span class="label">Decision Cash Impact</span>
-              <span class="value ${record.immediateFinancialDeltas.cashDelta < 0 ? 'impact-neg' : 'impact-pos'}">
-                ${this.formatCurrencyDelta(record.immediateFinancialDeltas.cashDelta)}
-              </span>
+          <!-- 3. Essential Company-Health Changes in Compact Form -->
+          <div class="compact-health-strip">
+            <div class="compact-metric-pill ${cashClass}">
+              <span class="metric-icon">💰</span>
+              <span class="metric-label">Cash:</span>
+              <span class="metric-val">${this.formatCurrencyDelta(cashDelta)}</span>
             </div>
-            <div class="delta-card">
-              <span class="label">Monthly Settlement Paid</span>
-              <span class="value impact-neg">
-                -${this.formatCurrency(record.monthlyBurnDeductionPaid.totalCashDeducted)}
-              </span>
+            <div class="compact-metric-pill ${itClass}">
+              <span class="metric-icon">🖥️</span>
+              <span class="metric-label">IT:</span>
+              <span class="metric-val">${itDelta >= 0 ? '+' : ''}${itDelta}</span>
             </div>
-            <div class="delta-card">
-              <span class="label">IT Stability Impact</span>
-              <span class="value ${record.immediateMetricDeltas.itDelta >= 0 ? 'impact-pos' : 'impact-neg'}">
-                ${record.immediateMetricDeltas.itDelta >= 0 ? '+' : ''}${record.immediateMetricDeltas.itDelta}
-              </span>
-            </div>
-            <div class="delta-card">
-              <span class="label">HR Morale Impact</span>
-              <span class="value ${record.immediateMetricDeltas.hrDelta >= 0 ? 'impact-pos' : 'impact-neg'}">
-                ${record.immediateMetricDeltas.hrDelta >= 0 ? '+' : ''}${record.immediateMetricDeltas.hrDelta}
-              </span>
+            <div class="compact-metric-pill ${hrClass}">
+              <span class="metric-icon">👥</span>
+              <span class="metric-label">HR:</span>
+              <span class="metric-val">${hrDelta >= 0 ? '+' : ''}${hrDelta}</span>
             </div>
           </div>
 
-          ${crossReactionHtml}
+          <!-- 4. Pending Delayed Risk in Compact Form (if any) -->
           ${scheduledHtml}
           ${resolvedHtml}
 
-          <div class="learning-feedback-box">
-            <h4>💡 Professional Takeaway: ${record.learningFeedback.corePrinciple}</h4>
-            <p class="takeaway-summary">${record.learningFeedback.tradeoffSummary}</p>
-            ${
-              record.learningFeedback.risksCreated && record.learningFeedback.risksCreated.length > 0
-                ? `
-            <div class="takeaway-escalation">
-              <strong>Further Investigation & Escalation Required:</strong>
-              <ul>
-                ${record.learningFeedback.risksCreated.map((r: string) => `<li>${r}</li>`).join('')}
-              </ul>
+          <!-- 5. One Brief Professional Learning Takeaway -->
+          <div class="compact-takeaway-card">
+            <div class="takeaway-headline">
+              <span class="takeaway-icon">💡</span>
+              <strong>Key Takeaway:</strong> ${record.learningFeedback.corePrinciple}
             </div>
-            `
-                : ''
-            }
+            <p class="takeaway-summary-text">${record.learningFeedback.tradeoffSummary}</p>
           </div>
 
-          <div class="modal-footer">
-            <button id="btn-continue-resolution" class="btn btn-primary btn-large">
-              ${continueBtnText}
-            </button>
-          </div>
+          <!-- 6. Optional Expandable Compliance & Documentation Details -->
+          <details class="resolution-expandable-details">
+            <summary class="details-toggle-btn">
+              <span>📋 View Compliance & Incident Documentation</span>
+              <span class="toggle-indicator">▾</span>
+            </summary>
+            <div class="details-accordion-body">
+              ${
+                outcomeDialogue && outcomeDialogue.amakaLine
+                  ? `
+              <div class="detail-block amaka-compliance">
+                <span class="detail-speaker-tag">Amaka Obi · Chief Compliance Officer</span>
+                <p class="detail-quote">“${outcomeDialogue.amakaLine}”</p>
+              </div>
+              `
+                  : ''
+              }
+
+              ${
+                record.learningFeedback.risksCreated && record.learningFeedback.risksCreated.length > 0
+                  ? `
+              <div class="detail-block takeaway-escalation">
+                <strong class="checklist-title">Incident Audit & Escalation Checklist:</strong>
+                <ul class="checklist-items">
+                  ${record.learningFeedback.risksCreated.map((r: string) => `<li>${r}</li>`).join('')}
+                </ul>
+              </div>
+              `
+                  : ''
+              }
+
+              ${
+                crossReactionHtml
+                  ? `
+              <div class="detail-block">
+                ${crossReactionHtml}
+              </div>
+              `
+                  : ''
+              }
+            </div>
+          </details>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btn-continue-resolution" class="btn btn-primary btn-large">
+            ${continueBtnText}
+          </button>
         </div>
       </div>
     `;
@@ -2065,6 +2321,7 @@ export class UIManager {
 
     const restartBtn = document.getElementById('btn-gameover-restart');
     restartBtn?.addEventListener('click', () => {
+      this.candidateKnowledge.reset();
       this.callbacks.onRestart();
     });
 
@@ -2172,6 +2429,7 @@ export class UIManager {
 
     const restartBtn = document.getElementById('btn-restart-simulation');
     restartBtn?.addEventListener('click', () => {
+      this.candidateKnowledge.reset();
       this.callbacks.onRestart();
     });
 

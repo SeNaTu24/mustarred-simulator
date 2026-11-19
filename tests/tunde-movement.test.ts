@@ -41,11 +41,11 @@ const IT_OBSTACLES: readonly ITObstacle[] = [
   { name: 'Server Rack 2', minX: 88, maxX: 132, minY: 195, maxY: 265 },
   { name: 'Server Rack 3', minX: 88, maxX: 132, minY: 285, maxY: 355 },
   // Upper Workstation (Kelechi)
-  { name: 'Upper Workstation Desk', minX: 220, maxX: 340, minY: 155, maxY: 205 },
+  { name: 'Upper Workstation Desk', minX: 225, maxX: 335, minY: 155, maxY: 195 },
   // Lower Workstation (Phishing Incident)
   { name: 'Lower Workstation Desk', minX: 220, maxX: 340, minY: 295, maxY: 345 },
   // Central Ops Console
-  { name: 'Central Ops Console', minX: 410, maxX: 470, minY: 220, maxY: 280 },
+  { name: 'Central Ops Console', minX: 415, maxX: 465, minY: 248, maxY: 292 },
   // Perimeter North Wall
   { name: 'North Perimeter Wall', minX: 0, maxX: 1600, minY: 0, maxY: 24 },
   // East Partition Wall (upper section)
@@ -200,12 +200,45 @@ describe('Tunde Bello Workplace Movement Routine (IT Department)', () => {
       }
 
       // Clearance checks:
-      // Upper Workstation ends at x=340 -> clearance = 370 - 340 = 30px
-      assert.ok(pos.x - 340 >= 20, 'At least 20px clearance from upper workstation');
-      // Console starts at x=410 -> clearance = 410 - 370 = 40px
-      assert.ok(410 - pos.x >= 20, 'At least 20px clearance from IT console');
-      // Console top edge is at y=220 -> y=210 is 10px clear to the north
-      assert.ok(pos.y < 220, 'Y position is north of IT console obstacle');
+      // Upper Workstation ends at x=335 -> clearance = 370 - 335 = 35px
+      assert.ok(pos.x - 335 >= 20, 'At least 20px clearance from upper workstation');
+      // Console starts at x=415 -> clearance = 415 - 370 = 45px
+      assert.ok(415 - pos.x >= 20, 'At least 20px clearance from IT console');
+      // Console top edge is at y=248 -> y=210 is 38px clear to the north
+      assert.ok(248 - pos.y >= 20, 'Y position is north of IT console obstacle with at least 20px clearance');
+    });
+
+    it('verifies 30x30 player body (Amaka) has full collision clearance at Tunde home and secondary positions and along walk path', () => {
+      const halfSize = 15;
+      const checkBodyAt = (cx: number, cy: number, label: string) => {
+        const pMinX = cx - halfSize;
+        const pMaxX = cx + halfSize;
+        const pMinY = cy - halfSize;
+        const pMaxY = cy + halfSize;
+
+        for (const obs of IT_OBSTACLES) {
+          const overlap = pMaxX > obs.minX && pMinX < obs.maxX && pMaxY > obs.minY && pMinY < obs.maxY;
+          assert.ok(!overlap, `Amaka 30x30 body at ${label} (${cx}, ${cy}) overlaps obstacle ${obs.name}`);
+        }
+      };
+
+      // 1. Home position (440, 210)
+      checkBodyAt(SimulatedTundeRoutine.HOME_POS.x, SimulatedTundeRoutine.HOME_POS.y, 'HOME_POS');
+
+      // 2. Secondary position (370, 210)
+      checkBodyAt(SimulatedTundeRoutine.SECONDARY_POS.x, SimulatedTundeRoutine.SECONDARY_POS.y, 'SECONDARY_POS');
+
+      // 3. Along entire walking path (370..440 at y=210)
+      for (let x = SimulatedTundeRoutine.SECONDARY_POS.x; x <= SimulatedTundeRoutine.HOME_POS.x; x += 5) {
+        checkBodyAt(x, 210, `path x=${x}`);
+      }
+
+      // 4. North clearance aisle behind console (y=205..225, x=360..500)
+      for (let x = 360; x <= 500; x += 20) {
+        for (let y = 205; y <= 225; y += 10) {
+          checkBodyAt(x, y, `aisle (${x}, ${y})`);
+        }
+      }
     });
 
     it('verifies horizontal straight-line movement path (440, 210) <-> (370, 210) is 100% collision free', () => {

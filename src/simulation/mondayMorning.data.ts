@@ -41,7 +41,7 @@ export const CHOICES_IT_MAIL: readonly ScenarioChoice[] = [
   {
     id: 'CHOICE_MAIL_REPORT',
     label: 'Report the suspicious message and coordinate containment',
-    description: 'Report forged technical headers to IT to block the sender domain on the gateway and reset Yusuf\'s compromised account.',
+    description: 'Report forged technical headers to IT to block the sender domain on the gateway and coordinate enterprise containment.',
     executiveRationale: 'Immediate reporting ensures company-wide perimeter containment and secures compromised colleague credentials.',
     isDefault: true,
     baseImpact: {
@@ -105,7 +105,7 @@ export const CHOICES_IT_MAIL: readonly ScenarioChoice[] = [
   {
     id: 'CHOICE_MAIL_DELETE',
     label: 'Delete the message without proper escalation',
-    description: 'Delete the email from your inbox without escalating. Leaves Yusuf\'s account compromised and colleagues exposed to identical attacks.',
+    description: 'Delete the email from your inbox without escalating, leaving any compromised colleague accounts and identical attacks uncontained.',
     executiveRationale: 'Assumed deleting from personal inbox resolved the issue, avoiding IT support overhead.',
     baseImpact: {
       cashDelta: 0,
@@ -506,7 +506,7 @@ export const MONDAY_INCIDENTS: readonly Incident[] = [
     title: 'A phishing mail is sitting in your inbox',
     urgency: 'critical',
     basePremise:
-      'This came in at 08:52 and you are one of eleven people copied. Yusuf already opened his and typed his password.',
+      'This came in at 08:52 and you are one of eleven people copied across Accounts and Operations. Finance flagged the email to IT as suspicious, but employee interaction has not yet been confirmed.',
     businessContext:
       'Anything you do with it is visible to the sender. Tunde can see what the page collects without anyone using a real account.',
     alsoPresent: {

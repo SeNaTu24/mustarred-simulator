@@ -19,6 +19,7 @@ import {
   getTundeFollowupDialogue,
   getFollowupExchange,
   getPhishingOutcomeConversation,
+  answerTundeQuestion,
   type PhishingOpeningOptionId,
 } from '../src/ui/phishingDialogue.ts';
 
@@ -103,6 +104,17 @@ class MockElement {
     this.dispatchEvent(evt);
   }
 
+  public submit(): void {
+    const evt = {
+      type: 'submit',
+      defaultPrevented: false,
+      preventDefault: () => {
+        evt.defaultPrevented = true;
+      },
+    };
+    this.dispatchEvent(evt);
+  }
+
   public get classList() {
     return {
       add: (...classes: string[]) => {
@@ -148,7 +160,8 @@ class MockElement {
       return this.id === sel.slice(1);
     }
     if (sel.startsWith('.')) {
-      return this.classList.contains(sel.slice(1));
+      const classes = sel.slice(1).split('.');
+      return classes.every((c) => this.classList.contains(c));
     }
     if (sel.startsWith('input[name=')) {
       const match = sel.match(/input\[name="?([^"\]]+)"?\]/);
@@ -169,16 +182,26 @@ class MockElement {
   }
 
   private parseAndBuildChildren(html: string): void {
-    const tagRegex = /<([a-zA-Z0-9\-]+)([^>]*)>([^<]*)/g;
+    const tagRegex = /<(\/)?([a-zA-Z0-9\-]+)([^>]*)>([^<]*)/g;
     let match: RegExpExecArray | null;
+    const stack: MockElement[] = [this];
+    const voidTags = new Set(['IMG', 'INPUT', 'BR', 'HR', 'META', 'LINK']);
 
     while ((match = tagRegex.exec(html)) !== null) {
-      const rawTag = match[1];
-      if (rawTag.startsWith('/')) continue;
+      const isClosing = Boolean(match[1]);
+      const rawTag = match[2].toUpperCase();
+      const attrsStr = match[3];
+      const innerText = match[4]?.trim();
 
-      const attrsStr = match[2];
-      const innerText = match[3]?.trim();
+      if (isClosing) {
+        if (stack.length > 1 && stack[stack.length - 1].tagName === rawTag) {
+          stack.pop();
+        }
+        continue;
+      }
+
       const elem = new MockElement(rawTag);
+      elem.rawHtml = match[0];
       if (innerText) {
         elem.textContent = innerText;
       }
@@ -202,7 +225,12 @@ class MockElement {
         elem.checked = true;
       }
 
-      this.appendChild(elem);
+      const parent = stack[stack.length - 1];
+      parent.appendChild(elem);
+
+      if (!voidTags.has(rawTag)) {
+        stack.push(elem);
+      }
     }
   }
 }
@@ -325,7 +353,7 @@ describe('Hybrid Workplace-Drama Dialogue System', () => {
       // 1. Standard Report
       const rep = getPhishingOutcomeConversation('CHOICE_MAIL_REPORT');
       assert.equal(rep.branch, 'proper_reporting');
-      assert.ok(rep.tundeLine.includes('blacklisted the sender domain'));
+      assert.ok(rep.tundeLine.includes('Perimeter gateway blocked the domain'));
       assert.ok(rep.amakaLine.includes('compliance breach register'));
       assert.ok(rep.amakaLine.includes('Yusuf may have entered his password before containment began'));
       assert.equal(rep.amakaLine.includes('no credentials or corporate data were transmitted'), false);
@@ -338,7 +366,7 @@ describe('Hybrid Workplace-Drama Dialogue System', () => {
       // 2. Inspected Report
       const insp = getPhishingOutcomeConversation('CHOICE_MAIL_INSPECTED_REPORT');
       assert.equal(insp.branch, 'proper_reporting');
-      assert.ok(insp.tundeLine.includes('Gateway blocking is active'));
+      assert.ok(insp.tundeLine.includes('Gateway block is active'));
       assert.ok(insp.amakaLine.includes('Yusuf\'s potential password submission remains an active exposure'));
       assert.equal(insp.amakaLine.includes('no corporate data or credentials were transmitted'), false);
       assert.ok(insp.amakaLine.includes('establish what information was accessed'));
@@ -349,7 +377,7 @@ describe('Hybrid Workplace-Drama Dialogue System', () => {
       // 3. Credential exposure disclosed & contained
       const contained = getPhishingOutcomeConversation('CHOICE_MAIL_OPEN_CONTAINED');
       assert.equal(contained.branch, 'disclosed_containment');
-      assert.ok(contained.tundeLine.includes('Active session tokens for both you and Yusuf were revoked'));
+      assert.ok(contained.tundeLine.includes('killed active sessions and forced password resets'));
       assert.ok(contained.amakaLine.includes('Immediate disclosure prevented a catastrophic payment fraud event'));
       assert.ok(contained.amakaLine.includes('establish what information was accessed'));
       assert.ok(contained.amakaLine.includes('assess the risk to affected individuals'));
@@ -358,7 +386,7 @@ describe('Hybrid Workplace-Drama Dialogue System', () => {
       // 4. Delete unescalated
       const del = getPhishingOutcomeConversation('CHOICE_MAIL_DELETE');
       assert.equal(del.branch, 'deleted_unescalated');
-      assert.ok(del.tundeLine.includes('eleven other staff inboxes'));
+      assert.ok(del.tundeLine.includes('Deleting the email from your inbox'));
       assert.ok(del.amakaLine.includes('Deleting without escalation breaches our compliance duties'));
       assert.ok(del.amakaLine.includes('assess the risk to affected individuals'));
       assert.ok(del.amakaLine.includes('determine whether regulatory notification is required under applicable law'));
@@ -366,7 +394,7 @@ describe('Hybrid Workplace-Drama Dialogue System', () => {
       // 5. Open concealed
       const open = getPhishingOutcomeConversation('CHOICE_MAIL_OPEN');
       assert.equal(open.branch, 'deleted_unescalated');
-      assert.ok(open.tundeLine.includes('threat actor holds active access'));
+      assert.ok(open.tundeLine.includes('still has active access'));
       assert.ok(open.amakaLine.includes('Concealing credential exposure'));
       assert.ok(open.amakaLine.includes('assess the critical risk to affected individuals'));
       assert.ok(open.amakaLine.includes('determine whether regulatory notification is required under applicable law'));
@@ -585,12 +613,19 @@ describe('Hybrid Workplace-Drama Dialogue System', () => {
 
       ui.showResolutionModal(record as any, 'TURN_INCIDENT_ACTIVE' as any, false);
 
+      const modalBackdrop = rootOverlay.querySelector<MockElement>('.modal-backdrop')!;
+      assert.ok(modalBackdrop.className.includes('is-resolution-overlay'), 'modalContainer has is-resolution-overlay class');
       const outcomeElem = rootOverlay.querySelector<MockElement>('.resolution-outcome-dialogue');
       assert.ok(outcomeElem, 'Outcome dialogue container is rendered');
+      assert.ok(rootOverlay.querySelector<MockElement>('.outcome-action-summary'), 'Action summary rendered');
+      assert.ok(rootOverlay.querySelector<MockElement>('.compact-health-strip'), 'Compact health strip rendered');
+      assert.ok(rootOverlay.querySelector<MockElement>('.compact-takeaway-card'), 'Compact takeaway card rendered');
+      assert.ok(rootOverlay.querySelector<MockElement>('.resolution-expandable-details'), 'Expandable details rendered');
+
       const text = rootOverlay.textContent;
       assert.ok(text.includes('Tunde Bello · Head of IT'));
       assert.ok(text.includes('Amaka Obi · Chief Compliance Officer'));
-      assert.ok(text.includes('blacklisted the sender domain'));
+      assert.ok(text.includes('Perimeter gateway blocked the domain'));
       assert.ok(text.includes('compliance breach register'));
       assert.ok(rootOverlay.querySelector<MockElement>('.takeaway-escalation'));
       assert.ok(text.includes('Preserve email headers and gateway logs'));
@@ -813,6 +848,352 @@ describe('Hybrid Workplace-Drama Dialogue System', () => {
       checkProximity(scene);
       assert.equal(scene.hasTundeCalledOut, true);
       assert.equal(scene.bubbleVisible, true);
+    });
+  });
+
+  // ==========================================================================
+  // TYPED QUESTIONS & NATURAL LANGUAGE INQUIRY SYSTEM
+  // ==========================================================================
+
+  describe('Typed Questions & Natural Language Inquiry System', () => {
+    describe('Question Interpretation Across Natural Variations', () => {
+      it('interprets variations of incident premise (what happened)', () => {
+        const q1 = answerTundeQuestion('What happened?');
+        assert.equal(q1.category, 'what_happened');
+        assert.ok(q1.response.includes('Tax Clearance Certificate'));
+        assert.ok(q1.response.includes('12 noon'));
+
+        const q2 = answerTundeQuestion("Tell me what's going on");
+        assert.equal(q2.category, 'what_happened');
+
+        const q3 = answerTundeQuestion('What is the situation?');
+        assert.equal(q3.category, 'what_happened');
+
+        const q4 = answerTundeQuestion('Why did you call me here?');
+        assert.equal(q4.category, 'what_happened');
+      });
+
+      it('interprets variations of Yusuf’s actions and employee involvement', () => {
+        const q1 = answerTundeQuestion('What did Yusuf do?');
+        assert.equal(q1.category, 'yusuf_actions');
+
+        const q2 = answerTundeQuestion('Did Yusuf click the link?');
+        assert.equal(q2.category, 'yusuf_actions');
+
+        const q3 = answerTundeQuestion('Has anyone in Finance interacted with the email?');
+        assert.equal(q3.category, 'yusuf_actions');
+
+        const q4 = answerTundeQuestion('Did Yusuf enter his password?');
+        assert.equal(q4.category, 'yusuf_actions');
+      });
+
+      it('interprets variations of email authenticity and sender legitimacy', () => {
+        const q1 = answerTundeQuestion('Is this email authentic?');
+        assert.equal(q1.category, 'email_authenticity');
+
+        const q2 = answerTundeQuestion('Is it a fake email?');
+        assert.equal(q2.category, 'email_authenticity');
+
+        const q3 = answerTundeQuestion('Is this really from the FIRS?');
+        assert.equal(q3.category, 'email_authenticity');
+
+        const q4 = answerTundeQuestion('Is the sender legitimate?');
+        assert.equal(q4.category, 'email_authenticity');
+      });
+
+      it('interprets variations of available evidence and forensic headers', () => {
+        const q1 = answerTundeQuestion('What evidence do we have?');
+        assert.equal(q1.category, 'available_evidence');
+
+        const q2 = answerTundeQuestion('What do we know so far?');
+        assert.equal(q2.category, 'available_evidence');
+
+        const q3 = answerTundeQuestion('Have you checked the technical headers?');
+        assert.equal(q3.category, 'available_evidence');
+
+        const q4 = answerTundeQuestion('What are our findings?');
+        assert.equal(q4.category, 'available_evidence');
+      });
+
+      it('interprets variations of account access and network compromise', () => {
+        const q1 = answerTundeQuestion('Are our corporate accounts compromised?');
+        assert.equal(q1.category, 'account_access');
+
+        const q2 = answerTundeQuestion('Were passwords stolen?');
+        assert.equal(q2.category, 'account_access');
+
+        const q3 = answerTundeQuestion('Did they breach our network?');
+        assert.equal(q3.category, 'account_access');
+
+        const q4 = answerTundeQuestion('Is our system hacked?');
+        assert.equal(q4.category, 'account_access');
+      });
+
+      it('interprets variations of immediate risks and business impacts', () => {
+        const q1 = answerTundeQuestion('What are the immediate risks?');
+        assert.equal(q1.category, 'immediate_risks');
+        assert.ok(q1.response.includes('Business Email Compromise'));
+        assert.ok(q1.response.includes('wire'));
+
+        const q2 = answerTundeQuestion('Could we lose money from this?');
+        assert.equal(q2.category, 'immediate_risks');
+
+        const q3 = answerTundeQuestion('What is the worst-case scenario?');
+        assert.equal(q3.category, 'immediate_risks');
+      });
+
+      it('interprets variations of next steps and recommendations', () => {
+        const q1 = answerTundeQuestion('What should we do next?');
+        assert.equal(q1.category, 'next_steps');
+
+        const q2 = answerTundeQuestion('What do you recommend?');
+        assert.equal(q2.category, 'next_steps');
+
+        const q3 = answerTundeQuestion('How do we handle this?');
+        assert.equal(q3.category, 'next_steps');
+      });
+
+      it('interprets NDPA compliance and breach register inquiries', () => {
+        const q1 = answerTundeQuestion('Do we need to notify under the NDPA?');
+        assert.equal(q1.category, 'ndpa_compliance');
+        assert.ok(q1.response.includes('Nigeria Data Protection Act'));
+        assert.ok(q1.response.includes('breach register'));
+
+        const q2 = answerTundeQuestion('Should this be recorded in our compliance register?');
+        assert.equal(q2.category, 'ndpa_compliance');
+      });
+
+      it('handles polite greetings and salutations naturally', () => {
+        const q1 = answerTundeQuestion('Good morning Tunde');
+        assert.equal(q1.category, 'greeting');
+        assert.ok(q1.response.includes('Good morning'));
+
+        const q2 = answerTundeQuestion('Hello');
+        assert.equal(q2.category, 'greeting');
+      });
+
+      it('handles ambiguous or off-topic questions without inventing facts', () => {
+        const q1 = answerTundeQuestion('What is the weather like in Abuja?');
+        assert.equal(q1.category, 'ambiguous');
+        assert.ok(q1.response.includes('accurate information'));
+        assert.ok(q1.response.includes('clarify'));
+
+        const q2 = answerTundeQuestion('Who won the football match yesterday?');
+        assert.equal(q2.category, 'ambiguous');
+
+        const q3 = answerTundeQuestion('   ');
+        assert.equal(q3.category, 'ambiguous');
+      });
+    });
+
+    describe('Information Boundaries Verification', () => {
+      it('before terminal inspection: does not claim investigation is complete or reveal workstation facts prematurely', () => {
+        const uninspectedState = {
+          isSenderInspected: false,
+          isLinkInspected: false,
+          linkOpened: false,
+          credentialsSubmitted: false,
+          introCompleted: false,
+        };
+
+        // Yusuf's actions: must not claim Yusuf definitely typed his password
+        const yusufAnswer = answerTundeQuestion('Did Yusuf enter his password?', uninspectedState);
+        assert.ok(yusufAnswer.response.includes("haven't confirmed whether Yusuf or anyone else in Finance opened"));
+        assert.equal(yusufAnswer.response.includes('Yusuf admitted'), false, 'Must not claim admission before terminal check');
+
+        // Email authenticity: must not cite Russian relay IP before inspection
+        const authAnswer = answerTundeQuestion('Is this email fake?', uninspectedState);
+        assert.ok(authAnswer.response.includes('firs.gov.ng'));
+        assert.ok(authAnswer.response.includes('firs-gov.com.ng'));
+        assert.equal(authAnswer.response.includes('185.220.101.44'), false, 'Must not cite Russian relay before inspection');
+
+        // Evidence: must state evidence is the email message waiting on workstation
+        const evAnswer = answerTundeQuestion('What evidence do we have?', uninspectedState);
+        assert.ok(evAnswer.response.includes('loaded on the workstation terminal waiting for us'));
+        assert.equal(evAnswer.response.includes('Terminal inspection confirmed'), false);
+
+        // Account access: must not claim confirmed network breach
+        const accessAnswer = answerTundeQuestion('Are our systems hacked?', uninspectedState);
+        assert.ok(accessAnswer.response.includes("don't have evidence of an active network breach"));
+      });
+
+      it('after terminal inspection: cites confirmed forensic findings and Yusuf’s admission', () => {
+        const inspectedState = {
+          isSenderInspected: true,
+          isLinkInspected: true,
+          linkOpened: true,
+          introCompleted: true,
+        };
+
+        // Yusuf's actions: confirms Yusuf admitted clicking and typing password
+        const yusufAnswer = answerTundeQuestion('What did Yusuf do?', inspectedState);
+        assert.ok(yusufAnswer.response.includes('Yusuf admitted he opened the link'));
+        assert.ok(yusufAnswer.response.includes('revoke his active sessions'));
+
+        // Email authenticity: confirms definitive fake citing Russian relay and SPF failure
+        const authAnswer = answerTundeQuestion('Is this email authentic?', inspectedState);
+        assert.ok(authAnswer.response.includes('Russian relay'));
+        assert.ok(authAnswer.response.includes('185.220.101.44'));
+        assert.ok(authAnswer.response.includes('SPF failed'));
+
+        // Evidence: confirms workstation inspection findings
+        const evAnswer = answerTundeQuestion('What evidence do we have?', inspectedState);
+        assert.ok(evAnswer.response.includes('Russian relay'));
+        assert.ok(evAnswer.response.includes('failed SPF'));
+      });
+
+      it('when credentials submitted during testing: explicitly addresses corporate account exposure', () => {
+        const credsState = {
+          isSenderInspected: true,
+          isLinkInspected: true,
+          linkOpened: true,
+          credentialsSubmitted: true,
+          introCompleted: true,
+        };
+
+        const accessAnswer = answerTundeQuestion('Were credentials stolen?', credsState);
+        assert.ok(accessAnswer.response.includes('corporate credentials were submitted to the attacker'));
+        assert.ok(accessAnswer.response.includes('Active session tokens were transmitted'));
+      });
+    });
+
+    describe('UI Input & Conversation Thread Lifecycle in Desk Modal', () => {
+      let uiManager: UIManager;
+      let selectedChoice: string | null = null;
+
+      beforeEach(() => {
+        rootOverlay.children = [];
+        rootOverlay.rawHtml = '';
+        selectedChoice = null;
+        uiManager = new UIManager({
+          onSelectChoice: (choiceId) => {
+            selectedChoice = choiceId;
+          },
+          onDismissResolution: () => {},
+          onRestart: () => {},
+          onPromptInteract: () => {},
+        });
+      });
+
+      it('renders the question input bar alongside existing dialogue choices in desk conversation', () => {
+        uiManager.showIncidentModal(activeIncident, evaluatedChoices);
+
+        const askBar = rootOverlay.querySelector('.cinematic-ask-bar');
+        assert.ok(askBar, '.cinematic-ask-bar container must exist');
+
+        const askInput = rootOverlay.querySelector<MockElement>('#input-ask-tunde');
+        assert.ok(askInput, '#input-ask-tunde input element must exist');
+
+        const askBtn = rootOverlay.querySelector('#btn-submit-question');
+        assert.ok(askBtn, '#btn-submit-question submit button must exist');
+
+        // Existing dialogue choices must remain present
+        const choiceBtns = rootOverlay.querySelectorAll('.dialogue-choice-btn');
+        assert.equal(choiceBtns.length, 3, 'All 3 preset dialogue options must remain accessible');
+
+        // Workstation button must remain present
+        const wsBtn = rootOverlay.querySelector('#btn-open-workstation');
+        assert.ok(wsBtn, '#btn-open-workstation must remain present');
+      });
+
+      it('submitting a question renders a short, readable conversation thread and does not mutate simulation state', () => {
+        uiManager.showIncidentModal(activeIncident, evaluatedChoices);
+
+        const askForm = rootOverlay.querySelector<MockElement>('#form-ask-tunde');
+        const askInput = rootOverlay.querySelector<MockElement>('#input-ask-tunde');
+        assert.ok(askForm && askInput);
+
+        // Candidate types a question
+        askInput.value = 'What did Yusuf do?';
+        askForm.submit();
+
+        // Conversation thread must be rendered
+        const thread = rootOverlay.querySelector('.cinematic-speech-thread');
+        assert.ok(thread, '.cinematic-speech-thread must be rendered after submitting a question');
+
+        const candidateBubble = rootOverlay.querySelector('.candidate-bubble');
+        assert.ok(candidateBubble, 'Candidate question bubble must be rendered');
+        assert.ok(candidateBubble.textContent.includes('What did Yusuf do?'), 'Candidate question text must appear');
+
+        const tundeBubble = rootOverlay.querySelector('.tunde-bubble');
+        assert.ok(tundeBubble, 'Tunde answer bubble must be rendered');
+        assert.ok(tundeBubble.textContent.includes("haven't confirmed whether Yusuf"));
+
+        // Must NOT trigger a decision or call onSelectChoice
+        assert.equal(selectedChoice, null, 'Typing a question must NOT trigger an operational choice');
+
+        // Workstation button and preset choices remain accessible
+        assert.ok(rootOverlay.querySelector('#btn-open-workstation'));
+        assert.equal(rootOverlay.querySelectorAll('.dialogue-choice-btn').length, 3);
+      });
+
+      it('submitting a follow-up question updates the conversation thread cleanly', () => {
+        uiManager.showIncidentModal(activeIncident, evaluatedChoices);
+
+        const askForm = rootOverlay.querySelector<MockElement>('#form-ask-tunde');
+        const askInput = rootOverlay.querySelector<MockElement>('#input-ask-tunde');
+        assert.ok(askForm && askInput);
+
+        // First question
+        askInput.value = 'What happened?';
+        askForm.submit();
+
+        let candidateBubble = rootOverlay.querySelector('.candidate-bubble');
+        assert.ok(candidateBubble?.textContent.includes('What happened?'));
+
+        // Second follow-up question
+        const updatedForm = rootOverlay.querySelector<MockElement>('#form-ask-tunde');
+        const updatedInput = rootOverlay.querySelector<MockElement>('#input-ask-tunde');
+        assert.ok(updatedForm && updatedInput);
+
+        updatedInput.value = 'What are the immediate risks?';
+        updatedForm.submit();
+
+        candidateBubble = rootOverlay.querySelector('.candidate-bubble');
+        assert.ok(candidateBubble?.textContent.includes('What are the immediate risks?'));
+
+        const tundeBubble = rootOverlay.querySelector('.tunde-bubble');
+        assert.ok(tundeBubble?.textContent.includes('Business Email Compromise'));
+      });
+
+      it('clicking a preset option resets active question view and displays structured Amaka/Tunde lines', () => {
+        uiManager.showIncidentModal(activeIncident, evaluatedChoices);
+
+        // Ask a question first
+        const askForm = rootOverlay.querySelector<MockElement>('#form-ask-tunde');
+        const askInput = rootOverlay.querySelector<MockElement>('#input-ask-tunde');
+        assert.ok(askForm && askInput);
+        askInput.value = 'Is it fake?';
+        askForm.submit();
+
+        assert.ok(rootOverlay.querySelector('.cinematic-speech-thread'));
+
+        // Now click preset option "What made you suspicious?"
+        const suspiciousBtn = rootOverlay.querySelector<MockElement>('#btn-dialogue-opt-what_suspicious');
+        assert.ok(suspiciousBtn);
+        suspiciousBtn.click();
+
+        // Speech thread is replaced by Amaka's line
+        const speechText = rootOverlay.querySelector('.cinematic-speech-text');
+        assert.ok(speechText);
+        assert.ok(speechText.textContent.includes('What made you suspicious?'));
+      });
+
+      it('empty or whitespace question submission does nothing and does not break display', () => {
+        uiManager.showIncidentModal(activeIncident, evaluatedChoices);
+
+        const askForm = rootOverlay.querySelector<MockElement>('#form-ask-tunde');
+        const askInput = rootOverlay.querySelector<MockElement>('#input-ask-tunde');
+        assert.ok(askForm && askInput);
+
+        askInput.value = '    ';
+        askForm.submit();
+
+        // Still renders standard opening speech bubble
+        const speechText = rootOverlay.querySelector('.cinematic-speech-text');
+        assert.ok(speechText);
+        assert.ok(speechText.textContent.includes(TUNDE_OPENING_LINE));
+      });
     });
   });
 });

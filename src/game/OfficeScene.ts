@@ -1611,8 +1611,8 @@ export class OfficeScene extends Phaser.Scene {
     }
 
     // IT Workstations
-    // Upper workstation (280, 180): preserve exact 120x50 physics collision obstacle, hide geometric visual
-    this.createObstacle(280, 180, 120, 50, 0x000000, undefined, 0).setAlpha(0);
+    // Upper workstation (280, 175): 110x40 obstacle leaves a wide 53px vertical clearance aisle to Ops Console (minY=248)
+    this.createObstacle(280, 175, 110, 40, 0x000000, undefined, 0).setAlpha(0);
     // Lower workstation (280, 320): preserve exact 120x50 physics collision obstacle, hide geometric visual
     this.createObstacle(280, 320, 120, 50, 0x000000, undefined, 0).setAlpha(0);
 
@@ -1626,11 +1626,12 @@ export class OfficeScene extends Phaser.Scene {
     itStationImg.setDisplaySize(130, 75);
     itStationImg.setDepth(6);
 
-    // IT Central Ops Console (Interaction Terminal)
-    this.createObstacle(440, 250, 60, 60, 0x0f172a, 0x38bdf8, 2);
-    const opsConsole = this.add.rectangle(440, 250, 44, 44, 0x0369a1).setStrokeStyle(1.5, 0x7dd3fc).setDepth(5);
-    const opsRadar = this.add.circle(440, 250, 14, 0x0c1e33).setStrokeStyle(1.5, 0x38bdf8).setDepth(6);
-    const opsSweep = this.add.line(440, 250, 0, 0, 10, -8, 0x22c55e).setLineWidth(1.5).setDepth(6);
+    // IT Central Ops Console (Interaction Terminal at 440, 270, bounds: x: 415..465, y: 248..292)
+    // Sized and positioned to give Amaka's 30x30 body 23px clearance north of console at Tunde's home pos (440, 210)
+    this.createObstacle(440, 270, 50, 44, 0x0f172a, 0x38bdf8, 2);
+    const opsConsole = this.add.rectangle(440, 270, 44, 44, 0x0369a1).setStrokeStyle(1.5, 0x7dd3fc).setDepth(5);
+    const opsRadar = this.add.circle(440, 270, 14, 0x0c1e33).setStrokeStyle(1.5, 0x38bdf8).setDepth(6);
+    const opsSweep = this.add.line(440, 270, 0, 0, 10, -8, 0x22c55e).setLineWidth(1.5).setDepth(6);
     void opsConsole; void opsRadar; void opsSweep;
 
     // --- 2. Human Resources Furniture (Northeast) ---
@@ -2168,6 +2169,8 @@ export class OfficeScene extends Phaser.Scene {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setCollideWorldBounds(true);
     body.setSize(30, 30);
+    body.setMaxVelocity(this.playerSpeed, this.playerSpeed);
+    body.setBounce(0, 0);
 
     // Amaka Obi's cartoon visual container
     this.playerVisuals = this.add.container(x, y);

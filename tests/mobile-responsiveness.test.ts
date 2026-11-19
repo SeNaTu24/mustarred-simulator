@@ -91,13 +91,17 @@ describe('Mobile Responsiveness & Viewport Breakpoints Audit', () => {
     assert.ok(mobileSection.includes('.hud-topbar'));
     assert.ok(mobileSection.includes('flex-direction: column;'));
 
-    // Grid layout for metric cards
+    // 3-column Grid layout for 3 primary metric cards (Cash Reserves, IT Stability, HR Morale)
     assert.ok(mobileSection.includes('.hud-center'));
-    assert.ok(mobileSection.includes('grid-template-columns: repeat(4, 1fr);'));
+    assert.ok(mobileSection.includes('grid-template-columns: repeat(3, 1fr);'));
 
-    // Narrow screen 2x2 grid for metric cards
+    // Expandable financial details drawer
+    assert.ok(mobileSection.includes('.hud-finance-expandable'));
+    assert.ok(mobileSection.includes('.hud-finance-dropdown'));
+
+    // Narrow screen (<=480px) keeps 3-column primary metrics grid and compact dropdown
     const narrowSection = cssContent.slice(cssContent.indexOf('@media (max-width: 480px)'));
-    assert.ok(narrowSection.includes('grid-template-columns: repeat(2, 1fr);'));
+    assert.ok(narrowSection.includes('grid-template-columns: repeat(3, 1fr);'));
   });
 
   it('Requirement 6: ensures long dialogue and decision panels are independently scrollable', () => {
@@ -135,5 +139,26 @@ describe('Mobile Responsiveness & Viewport Breakpoints Audit', () => {
     assert.ok(landscapeSection.includes('.pillars-group'));
     assert.ok(landscapeSection.includes('display: none;')); // Conserves width
     assert.ok(landscapeSection.includes('max-height: 98vh;'));
+  });
+
+  it('Requirement 9: ensures compact outcome screen layout on mobile (<=480px) without overflow or clipping', () => {
+    const narrowSection = cssContent.slice(cssContent.indexOf('@media (max-width: 480px)'));
+    assert.ok(narrowSection.includes('.modal-backdrop.is-resolution-overlay'));
+    assert.ok(narrowSection.includes('align-items: flex-start;'));
+    assert.ok(narrowSection.includes('.resolution-dialog'));
+    assert.ok(narrowSection.includes('margin: 0 auto;'));
+    assert.ok(narrowSection.includes('.resolution-dialog .modal-body'));
+    assert.ok(narrowSection.includes('min-height: 0;'));
+    assert.ok(narrowSection.includes('overflow-y: auto;'));
+    assert.ok(narrowSection.includes('.resolution-dialog .modal-footer .btn-large'));
+    assert.ok(narrowSection.includes('min-height: 44px;'));
+    assert.ok(narrowSection.includes('.compact-health-strip'));
+    assert.ok(narrowSection.includes('grid-template-columns: repeat(3, 1fr);'));
+    assert.ok(narrowSection.includes('.compact-metric-pill'));
+    assert.ok(narrowSection.includes('min-width: 0;'));
+    assert.ok(narrowSection.includes('.outcome-action-summary'));
+    assert.ok(narrowSection.includes('.outcome-tunde-quote-card'));
+    assert.ok(narrowSection.includes('.compact-takeaway-card'));
+    assert.ok(narrowSection.includes('.resolution-expandable-details'));
   });
 });

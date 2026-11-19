@@ -289,7 +289,8 @@ describe('Monday Morning Scenario - IT Phishing Baseline State', () => {
     assert.equal(activeIncident.id, 'INC_MAIL_FIRS');
     assert.equal(activeIncident.department, 'IT');
     assert.equal(activeIncident.urgency, 'critical');
-    assert.ok(activeIncident.basePremise.includes('Yusuf already opened his and typed his password'));
+    assert.ok(activeIncident.basePremise.includes('employee interaction has not yet been confirmed'));
+    assert.equal(activeIncident.basePremise.includes('typed his password'), false, 'Opening briefing must not prematurely reveal Yusuf password submission');
     assert.ok(activeIncident.artifact?.title.includes('FIRS'));
 
     const choices = sim.getEvaluatedChoices();
@@ -686,5 +687,178 @@ describe('UIManager - Phishing Email Interactive Modal & Consequence Mapping', (
 
     // Radio selection must NOT undo credential theft: resolves to CHOICE_MAIL_OPEN
     assert.equal(selectedChoiceId, 'CHOICE_MAIL_OPEN');
+  });
+
+  it('Phase 2 Knowledge: tracks candidate discovery across desk, workstation, and stepping away', () => {
+    ui.showIncidentModal(activeIncident, evaluatedChoices);
+
+    const ck = ui.getCandidateKnowledge();
+    assert.ok(ck);
+    assert.strictEqual(ck.hasAction('STARTING_CONTEXT'), true);
+    assert.strictEqual(ck.hasAction('ASK_TUNDE_DESK'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_SENDER_SUSPICIOUS'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_SENDER_FORGED'), false);
+    assert.strictEqual(ck.hasFact('FACT_IT_YUSUF_ADMISSION'), false);
+
+    // Asking Tunde questions at initial desk does NOT unlock hidden Yusuf admission
+    const askInput = rootOverlay.querySelector<MockElement>('#input-ask-tunde');
+    const askForm = rootOverlay.querySelector<MockElement>('#form-ask-tunde');
+    if (askInput && askForm) {
+      askInput.value = 'What did Yusuf do with the email?';
+      askForm.dispatchEvent({ type: 'submit', preventDefault: () => {} });
+    }
+    assert.strictEqual(ck.hasFact('FACT_IT_YUSUF_ADMISSION'), false);
+
+    // Step away from initial desk to office floor
+    rootOverlay.querySelector<MockElement>('#btn-desk-step-away')!.click();
+    assert.strictEqual(rootOverlay.querySelector<MockElement>('.modal-backdrop')!.classList.contains('hidden'), true);
+
+    // Return to desk: initial context and desk briefing persist, Yusuf admission still locked
+    ui.showIncidentModal(activeIncident, evaluatedChoices);
+    assert.strictEqual(ck.hasFact('FACT_IT_SENDER_SUSPICIOUS'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_YUSUF_ADMISSION'), false);
+
+    // Transition to workstation
+    rootOverlay.querySelector<MockElement>('#btn-open-workstation')!.click();
+    assert.strictEqual(ck.hasFact('FACT_IT_SENDER_FORGED'), false);
+    assert.strictEqual(ck.hasFact('FACT_IT_YUSUF_ADMISSION'), false);
+
+    // Inspect sender headers
+    rootOverlay.querySelector<MockElement>('#btn-inspect-sender')!.click();
+    assert.strictEqual(ck.hasAction('INSPECT_EMAIL_HEADER'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_SENDER_FORGED'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_FIRS_IMPERSONATION'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_YUSUF_ADMISSION'), false);
+
+    // Inspect link target
+    rootOverlay.querySelector<MockElement>('#btn-check-link')!.click();
+    assert.strictEqual(ck.hasAction('INSPECT_LINK_TARGET'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_LINK_HARVESTS_CREDENTIALS'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_YUSUF_ADMISSION'), false);
+
+    // Step away from workstation to office floor
+    rootOverlay.querySelector<MockElement>('#btn-investigation-step-away')!.click();
+    assert.strictEqual(rootOverlay.querySelector<MockElement>('.modal-backdrop')!.classList.contains('hidden'), true);
+
+    // Candidate returns to Tunde from office floor (re-entering debrief)
+    ui.showIncidentModal(activeIncident, evaluatedChoices);
+
+    // Discovered knowledge persists and follow-up debrief reveals Yusuf's admission
+    assert.strictEqual(ck.hasAction('INSPECT_EMAIL_HEADER'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_SENDER_FORGED'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_LINK_HARVESTS_CREDENTIALS'), true);
+    assert.strictEqual(ck.hasAction('FINANCE_FOLLOWUP_CALL'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_YUSUF_ADMISSION'), true);
+
+    // Now return to workstation and execute decision
+    rootOverlay.querySelector<MockElement>('#btn-open-workstation')!.click();
+    const executeBtn = rootOverlay.querySelector<MockElement>('#btn-execute-decision')!;
+    executeBtn.click();
+
+    // Decision execution does NOT prematurely grant OUTCOME_DEBRIEF
+    assert.strictEqual(ck.hasAction('OUTCOME_DEBRIEF'), false);
+
+    // Resolution modal displays outcome debrief
+    const mockRecord: any = {
+      entryIndex: 0,
+      turn: 1,
+      timestamp: Date.now(),
+      incidentId: 'INC_MAIL_FIRS',
+      incidentTitle: 'FIRS Tax Clearance',
+      department: 'IT',
+      chosenOptionId: 'CHOICE_MAIL_REPORT',
+      chosenOptionLabel: 'Report the suspicious message',
+      executiveRationale: 'Immediate reporting',
+      effectiveChoiceImpact: {
+        cashDelta: -12000,
+        grossBurnRateDelta: 0,
+        debtDelta: 0,
+        itDelta: 8,
+        hrDelta: 2,
+        operationalExplanation: 'Immediate containment initiated.',
+      },
+      immediateFinancialDeltas: { cashDelta: -12000, grossBurnRateDelta: 0, debtDelta: 0 },
+      immediateMetricDeltas: { itDelta: 8, hrDelta: 2 },
+      delayedEffectsScheduled: [],
+      delayedEffectsResolvedThisTurn: [],
+      learningFeedback: {
+        corePrinciple: 'Verify before trusting',
+        tradeoffSummary: 'Security vs speed',
+        risksCreated: [],
+      },
+    };
+    ui.showResolutionModal(mockRecord, 'AWAITING_DECISION', false);
+
+    // Debrief evidence unlocked, but uncertain inquiries are NOT treated as established facts
+    assert.strictEqual(ck.hasAction('OUTCOME_DEBRIEF'), true);
+    assert.strictEqual(ck.hasEvidence('EV_IT_CONTAINMENT_OUTCOME'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_NDPA_NOTIFICATION_MANDATORY'), false);
+    assert.strictEqual(ck.hasFact('FACT_IT_OTHER_RECIPIENTS_INTERACTED'), false);
+  });
+
+  it('Phase 2 Integrity: direct execution from workstation does NOT unlock Yusuf admission without disclosure', () => {
+    ui.resetCandidateKnowledge();
+    ui.showIncidentModal(activeIncident, evaluatedChoices);
+
+    const ck = ui.getCandidateKnowledge();
+    assert.strictEqual(ck.hasFact('FACT_IT_YUSUF_ADMISSION'), false);
+    assert.strictEqual(ck.hasAction('FINANCE_FOLLOWUP_CALL'), false);
+
+    // Transition to workstation
+    rootOverlay.querySelector<MockElement>('#btn-open-workstation')!.click();
+
+    // Inspect headers and link on workstation
+    rootOverlay.querySelector<MockElement>('#btn-inspect-sender')!.click();
+    rootOverlay.querySelector<MockElement>('#btn-check-link')!.click();
+    assert.strictEqual(ck.hasFact('FACT_IT_SENDER_FORGED'), true);
+    assert.strictEqual(ck.hasFact('FACT_IT_LINK_HARVESTS_CREDENTIALS'), true);
+
+    // Candidate executes decision directly from workstation without returning to Tunde
+    const executeBtn = rootOverlay.querySelector<MockElement>('#btn-execute-decision')!;
+    executeBtn.click();
+
+    // Must NOT have recorded Finance follow-up call or Yusuf's admission!
+    assert.strictEqual(ck.hasAction('FINANCE_FOLLOWUP_CALL'), false);
+    assert.strictEqual(ck.hasFact('FACT_IT_YUSUF_ADMISSION'), false);
+    assert.strictEqual(ck.hasAction('OUTCOME_DEBRIEF'), false);
+
+    // When resolution modal renders:
+    const mockRecord: any = {
+      entryIndex: 0,
+      turn: 1,
+      timestamp: Date.now(),
+      incidentId: 'INC_MAIL_FIRS',
+      incidentTitle: 'FIRS Tax Clearance',
+      department: 'IT',
+      chosenOptionId: 'CHOICE_MAIL_REPORT',
+      chosenOptionLabel: 'Report the suspicious message',
+      executiveRationale: 'Immediate reporting',
+      effectiveChoiceImpact: {
+        cashDelta: -12000,
+        grossBurnRateDelta: 0,
+        debtDelta: 0,
+        itDelta: 8,
+        hrDelta: 2,
+        operationalExplanation: 'Immediate containment initiated.',
+      },
+      immediateFinancialDeltas: { cashDelta: -12000, grossBurnRateDelta: 0, debtDelta: 0 },
+      immediateMetricDeltas: { itDelta: 8, hrDelta: 2 },
+      delayedEffectsScheduled: [],
+      delayedEffectsResolvedThisTurn: [],
+      learningFeedback: {
+        corePrinciple: 'Verify before trusting',
+        tradeoffSummary: 'Security vs speed',
+        risksCreated: [],
+      },
+    };
+    ui.showResolutionModal(mockRecord, 'AWAITING_DECISION', false);
+
+    // Outcome debrief is recorded, but Finance call was never received during investigation
+    assert.strictEqual(ck.hasAction('OUTCOME_DEBRIEF'), true);
+    assert.strictEqual(ck.hasEvidence('EV_IT_CONTAINMENT_OUTCOME'), true);
+    assert.strictEqual(ck.hasAction('FINANCE_FOLLOWUP_CALL'), false);
+    assert.strictEqual(ck.hasFact('FACT_IT_YUSUF_ADMISSION'), false);
+    assert.strictEqual(ck.hasFact('FACT_IT_NDPA_NOTIFICATION_MANDATORY'), false);
+    assert.strictEqual(ck.hasFact('FACT_IT_OTHER_RECIPIENTS_INTERACTED'), false);
   });
 });
